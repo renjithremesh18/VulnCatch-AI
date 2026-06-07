@@ -189,74 +189,109 @@ def banner_grab(target, callback):
 
 
 def http_methods_probe(target, callback):
-    """Check which HTTP methods the server allows."""
+    """Check which HTTP methods the server allows — parallel requests for speed."""
+    import concurrent.futures
     url = _normalize_url(target)
     _log(callback, f'Probing HTTP methods on {url}', 'info')
 
     methods_to_check = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS',
                         'HEAD', 'TRACE', 'CONNECT']
-    dangerous = ['PUT', 'DELETE', 'TRACE', 'CONNECT']
+    dangerous = ['PUT', 'DELETE', 'TRACE']
+    headers = {'User-Agent': 'VulnCatch-AI/4.0'}
 
+    # Try OPTIONS first to get Allow header quickly
+    allow_header = ''
     try:
-        # First try OPTIONS to get Allow header
-        resp = requests.options(url, timeout=10, verify=False,
-                                headers={'User-Agent': 'VulnCatch-AI/3.0'})
+        resp = requests.options(url, timeout=6, verify=False, headers=headers)
         allow_header = resp.headers.get('Allow', '')
         if allow_header:
-            _log(callback, f'Allow header: {allow_header}', 'info')
+            _log(callback, f'  Allow header: {allow_header}', 'info')
+    except Exception:
+        pass
 
-        # Check each method
-        for method in methods_to_check:
+    def probe_method(method):
+        try:
+            r = requests.request(method, url, timeout=5, verify=False,
+                                 headers=headers, allow_redirects=False)
+            return method, r.status_code, None
+        except requests.exceptions.Timeout:
+            return method, None, 'timeout'
+        except requests.exceptions.ConnectionError:
+            return method, None, 'connection_error'
+        except Exception as e:
+            return method, None, str(e)[:40]
+
+    # Run all method checks in parallel — much faster than sequential
+    _log(callback, f'  Probing {len(methods_to_check)} HTTP methods in parallel...', 'info')
+    with concurrent.futures.ThreadPoolExecutor(max_workers=9) as ex:
+        futures = {ex.submit(probe_method, m): m for m in methods_to_check}
+        results = {}
+        for f in concurrent.futures.as_completed(futures, timeout=20):
             try:
-                r = requests.request(method, url, timeout=8, verify=False,
-                                     headers={'User-Agent': 'VulnCatch-AI/3.0'})
-                status = r.status_code
-                level = 'success'
-                if status < 400:
-                    level = 'warning' if method in dangerous else 'success'
-                    _log(callback,
-                         f'  {method:<8}: HTTP {status} — {"⚠ ALLOWED" if status < 400 else "blocked"}',
-                         level)
-
-                    if method in dangerous and status < 400:
-                        sev = 'high' if method in ['PUT', 'DELETE'] else 'medium'
-                        _finding(callback, sev, 'HTTP Methods',
-                                 f'Dangerous HTTP method {method} is allowed (HTTP {status})',
-                                 method=method, status=status)
-                else:
-                    _log(callback, f'  {method:<8}: HTTP {status}', 'info')
+                method, status, err = f.result()
+                results[method] = (status, err)
             except Exception:
                 pass
 
-    except Exception as e:
-        _log(callback, f'HTTP methods probe failed: {e}', 'error')
+    # Report results in consistent order
+    for method in methods_to_check:
+        status, err = results.get(method, (None, 'no response'))
+        if err:
+            _log(callback, f'  {method:<8}: {err}', 'info')
+            continue
+        if status is None:
+            continue
+
+        if status < 400:
+            level = 'warning' if method in dangerous else 'success'
+            _log(callback, f'  {method:<8}: HTTP {status} — {"⚠ ALLOWED" if method in dangerous else "✔ OK"}', level)
+            if method in dangerous:
+                sev = 'high' if method in ['PUT', 'DELETE'] else 'medium'
+                _finding(callback, sev, 'HTTP Methods',
+                         f'Dangerous HTTP method {method} is allowed (HTTP {status}) — '  
+                         f'{"PUT allows file upload" if method=="PUT" else "DELETE allows file deletion" if method=="DELETE" else "TRACE enables XST attacks"}',
+                         method=method, status=status)
+        elif status == 405:
+            _log(callback, f'  {method:<8}: HTTP 405 — blocked ✔', 'success')
+        else:
+            _log(callback, f'  {method:<8}: HTTP {status}', 'info')
 
     _log(callback, 'HTTP Methods Probe completed.', 'success')
 
 
 def nikto_scan(target, callback):
-    """Run Nikto web server scanner."""
+    """Run Nikto web server scanner with correct flags."""
     _log(callback, f'Starting Nikto Scan on [{target}]', 'info')
     _log(callback, 'Nikto performs comprehensive web server vulnerability testing...', 'info')
     _log(callback, 'This may take 2–5 minutes depending on the target.', 'warning')
 
-    args = ['-h', target, '-Tuning', 'x 6', '-nointeractive',
-            '-timeout', '5', '-maxtime', '180s', '-no404', '-Format', 'txt']
+    # Clean target — Nikto needs just hostname or URL
+    t = re.sub(r'^https?://', '', target).split('/')[0].strip()
+
+    # Correct nikto flags (removed -no404 which is invalid on some versions)
+    args = [
+        '-h', t,
+        '-Tuning', 'x 6',
+        '-nointeractive',
+        '-nocheck',        # Skip update check (faster start)
+        '-timeout', '8',
+        '-maxtime', '240s',
+        '-Format', 'txt',
+    ]
 
     cmd = None
     if IS_WINDOWS:
-        # Try WSL first
         try:
-            test = subprocess.run(['wsl', 'which', 'nikto'], capture_output=True, timeout=5)
+            test = subprocess.run(['wsl', 'which', 'nikto'],
+                                  capture_output=True, timeout=5)
             if test.returncode == 0:
                 cmd = ['wsl', 'nikto'] + args
         except Exception:
             pass
-
         if not cmd:
-            _log(callback, 'Nikto not found via WSL. Install: wsl --install, then sudo apt install nikto', 'error')
+            _log(callback, 'Nikto not found in WSL. Install: sudo apt install nikto -y', 'error')
             _finding(callback, 'info', 'Tool Missing',
-                     'Nikto not installed in WSL. Install with: wsl sudo apt install nikto')
+                     'Nikto not installed in WSL. Run: wsl sudo apt install nikto -y')
             return
     else:
         cmd = ['nikto'] + args
@@ -268,25 +303,33 @@ def nikto_scan(target, callback):
             line = line.strip()
             if not line:
                 continue
+            # Skip nikto help/options lines (only shown on error)
+            if line.startswith('-') and ':' in line and len(line) < 60:
+                continue
+            if line.startswith('Options:') or line.startswith('+ requires'):
+                continue
             _log(callback, f'  {line}', 'info')
 
-            # Flag Nikto findings
             lower = line.lower()
             if '+ osvdb' in lower or 'vulnerability' in lower or 'vulnerable' in lower:
-                _finding(callback, 'high', 'Nikto / Web Vulnerability',
-                         line[:300])
+                _finding(callback, 'high', 'Nikto / Web Vulnerability', line[:300])
             elif 'missing' in lower and ('header' in lower or 'hsts' in lower):
                 _finding(callback, 'medium', 'Nikto / HTTP Headers', line[:300])
+            elif 'allowed' in lower and 'method' in lower:
+                _finding(callback, 'medium', 'Nikto / HTTP Methods', line[:300])
+            elif 'outdated' in lower or 'old version' in lower:
+                _finding(callback, 'high', 'Nikto / Outdated Software', line[:300])
 
-        proc.wait(timeout=200)
+        proc.wait(timeout=260)
         _log(callback, 'Nikto Scan completed.', 'success')
 
     except subprocess.TimeoutExpired:
-        _log(callback, 'Nikto scan timed out — partial results above', 'warning')
+        proc.kill()
+        _log(callback, 'Nikto scan timed out (4 min limit) — partial results above', 'warning')
     except FileNotFoundError:
-        _log(callback, 'Nikto not found. On Linux: sudo apt install nikto', 'error')
+        _log(callback, 'Nikto not found. Install: sudo apt install nikto -y', 'error')
         _finding(callback, 'info', 'Tool Missing',
-                 'Nikto is not installed. Install with: sudo apt install nikto')
+                 'Nikto is not installed. Install with: sudo apt install nikto -y')
     except Exception as e:
         _log(callback, f'Nikto error: {e}', 'error')
 
