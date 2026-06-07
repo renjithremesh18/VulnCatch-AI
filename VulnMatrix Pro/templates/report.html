@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scan Report — {{ scan.target }} — VulnCatch AI</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+    :root {
+      --primary:   #4F46E5;
+      --danger:    #EF4444;
+      --warning:   #F97316;
+      --caution:   #F59E0B;
+      --info:      #3B82F6;
+      --muted:     #94A3B8;
+      --success:   #10B981;
+      --bg:        #F0F4F8;
+      --surface:   #FFFFFF;
+      --border:    #E2E8F0;
+      --text:      #1E293B;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* Header */
+    .report-header {
+      background: linear-gradient(135deg, #4F46E5 0%, #6366F1 100%);
+      border-bottom: 1px solid #3730A3;
+      padding: 28px 48px 20px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .report-logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .report-logo-icon {
+      width: 44px;
+      height: 44px;
+      background: rgba(255,255,255,.2);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+    }
+
+    .report-logo-text {
+      font-family: 'Poppins', sans-serif;
+      font-size: 18px;
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: 1px;
+    }
+
+    .report-meta {
+      text-align: right;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .report-meta-label {
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    .report-meta-val {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: var(--text);
+    }
+
+    /* Print button */
+    .print-bar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 48px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .print-btn {
+      background: linear-gradient(135deg, var(--primary), #6366F1);
+      border: none;
+      border-radius: 6px;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 8px 20px;
+      cursor: pointer;
+      letter-spacing: .5px;
+    }
+
+    .print-hint {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    /* Main content */
+    .report-content {
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 32px 48px 64px;
+    }
+
+    /* Target card */
+    .target-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px 28px;
+      margin-bottom: 24px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 16px;
+      align-items: center;
+    }
+
+    .target-title {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 20px;
+      font-weight: 900;
+      color: var(--primary);
+      margin-bottom: 6px;
+      letter-spacing: 2px;
+    }
+
+    .target-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-top: 8px;
+    }
+
+    .meta-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .meta-label {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .meta-val {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: var(--text);
+    }
+
+    /* Score circle */
+    .score-circle {
+      width: 90px;
+      height: 90px;
+      border-radius: 50%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      border: 3px solid;
+      flex-shrink: 0;
+    }
+
+    .score-num {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 26px;
+      font-weight: 900;
+      line-height: 1;
+    }
+
+    .score-sub {
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    /* Summary grid */
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+
+    .summary-cell {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px 12px;
+      text-align: center;
+      border-top: 3px solid;
+    }
+
+    .summary-count {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 28px;
+      font-weight: 900;
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+
+    .summary-label {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    /* Section title */
+    .section-title {
+      font-family: 'Poppins', sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: .5px;
+      color: var(--primary);
+      margin: 28px 0 14px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .section-count {
+      font-size: 10px;
+      background: var(--primary);
+      color: #fff;
+      padding: 1px 8px;
+      border-radius: 4px;
+      font-family: 'Inter', sans-serif;
+      font-weight: 700;
+    }
+
+    .findings-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 8px;
+    }
+
+    .findings-table thead tr {
+      background: #EEF2FF;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .findings-table th {
+      text-align: left;
+      padding: 8px 12px;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .findings-table tbody tr {
+      border-bottom: 1px solid var(--border);
+    }
+
+    .findings-table tbody tr:hover {
+      background: var(--bg);
+    }
+
+    .findings-table td {
+      padding: 9px 12px;
+      vertical-align: top;
+      font-size: 12px;
+    }
+
+    .sev-pill {
+      display: inline-block;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      padding: 2px 8px;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+
+    .sev-critical { background: #FEF2F2; color: #991B1B; border: 1px solid #FECACA; }
+    .sev-high     { background: #FFF7ED; color: #9A3412; border: 1px solid #FDBA74; }
+    .sev-medium   { background: #FFFBEB; color: #92400E; border: 1px solid #FDE68A; }
+    .sev-low      { background: #F0FDF4; color: #065F46; border: 1px solid #A7F3D0; }
+    .sev-info     { background: #EFF6FF; color: #1E40AF; border: 1px solid #BFDBFE; }
+
+    .td-cat { color: var(--muted); font-size: 11px; }
+    .td-desc { color: var(--text); line-height: 1.5; }
+
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      color: var(--muted);
+      padding: 32px;
+      font-size: 13px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+
+    /* Footer */
+    .report-footer {
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      text-align: center;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.7;
+    }
+
+    /* Print */
+    @media print {
+      .print-bar { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="report-header">
+  <div class="report-logo">
+    <div class="report-logo-icon">🏏</div>
+    <div>
+      <div class="report-logo-text">VulnCatch AI</div>
+      <div style="font-size:11px;color:rgba(255,255,255,.7);margin-top:2px">AI-POWERED SECURITY ASSESSMENT REPORT</div>
+    </div>
+  </div>
+  <div class="report-meta">
+    <span class="report-meta-label">Generated</span>
+    <span class="report-meta-val">{{ generated_at }}</span>
+    <span class="report-meta-label" style="margin-top:8px">Scan ID</span>
+    <span class="report-meta-val" style="font-size:10px">{{ scan.id }}</span>
+  </div>
+</div>
+
+<!-- Print bar -->
+<div class="print-bar">
+  <button class="print-btn" onclick="window.print()">🖨 Print / Save as PDF</button>
+  <span class="print-hint">Browser: File → Print → Save as PDF for a clean report</span>
+</div>
+
+<!-- Content -->
+<div class="report-content">
+
+  <!-- Target card -->
+  <div class="target-card">
+    <div>
+      <div class="target-title">{{ scan.target }}</div>
+      <div class="target-meta">
+        <div class="meta-item">
+          <span class="meta-label">Status</span>
+          <span class="meta-val" style="color:{% if scan.status == 'completed' %}var(--success){% else %}var(--warning){% endif %}">
+            {{ scan.status | upper }}
+          </span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Scan Started</span>
+          <span class="meta-val">{{ (scan.created_at or '')[:16].replace('T', ' ') }}</span>
+        </div>
+        {% if scan.completed_at %}
+        <div class="meta-item">
+          <span class="meta-label">Completed</span>
+          <span class="meta-val">{{ scan.completed_at[:16].replace('T', ' ') }}</span>
+        </div>
+        {% endif %}
+        <div class="meta-item">
+          <span class="meta-label">Total Findings</span>
+          <span class="meta-val">{{ scan.findings | length }}</span>
+        </div>
+      </div>
+    </div>
+    {% set score = scan.score or 0 %}
+    {% set score_col = color %}
+    <div class="score-circle" style="border-color:{{ color }};background:{{ color }}18">
+      <div class="score-num" style="color:{{ color }}">{{ score }}</div>
+      <div class="score-sub">/ 100</div>
+      <div style="font-size:8px;font-weight:700;letter-spacing:1px;color:{{ color }};margin-top:2px">
+        {{ label | upper }}
+      </div>
+    </div>
+  </div>
+
+  <!-- Summary grid -->
+  <div class="summary-grid">
+    {% set counts = scan.breakdown %}
+    <div class="summary-cell" style="border-color:var(--danger)">
+      <div class="summary-count" style="color:var(--danger)">{{ counts.critical }}</div>
+      <div class="summary-label">Critical</div>
+    </div>
+    <div class="summary-cell" style="border-color:var(--warning)">
+      <div class="summary-count" style="color:var(--warning)">{{ counts.high }}</div>
+      <div class="summary-label">High</div>
+    </div>
+    <div class="summary-cell" style="border-color:var(--caution)">
+      <div class="summary-count" style="color:var(--caution)">{{ counts.medium }}</div>
+      <div class="summary-label">Medium</div>
+    </div>
+    <div class="summary-cell" style="border-color:var(--info)">
+      <div class="summary-count" style="color:var(--info)">{{ counts.low }}</div>
+      <div class="summary-label">Low</div>
+    </div>
+    <div class="summary-cell" style="border-color:var(--muted)">
+      <div class="summary-count" style="color:var(--muted)">{{ counts.info }}</div>
+      <div class="summary-label">Info</div>
+    </div>
+  </div>
+
+  <!-- Findings table -->
+  <div class="section-title">
+    All Findings
+    <span class="section-count">{{ scan.findings | length }}</span>
+  </div>
+
+  {% if scan.findings %}
+  <table class="findings-table">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Severity</th>
+        <th>Category</th>
+        <th>Description</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in scan.findings %}
+      <tr>
+        <td style="color:var(--muted);font-family:'JetBrains Mono',monospace;font-size:11px">{{ loop.index }}</td>
+        <td>
+          <span class="sev-pill sev-{{ f.severity }}">{{ f.severity | upper }}</span>
+        </td>
+        <td class="td-cat">{{ f.category }}</td>
+        <td class="td-desc">{{ f.description }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">
+    ✔ No findings recorded for this scan.
+  </div>
+  {% endif %}
+
+  <!-- Scan modules used -->
+  <div class="section-title">Modules Used</div>
+  <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px">
+    {% for mod in scan.modules %}
+    <span style="background:var(--surface);border:1px solid var(--border);
+                 border-radius:5px;padding:4px 10px;font-size:11px;
+                 font-family:'JetBrains Mono',monospace;color:var(--primary)">
+      {{ mod }}
+    </span>
+    {% endfor %}
+  </div>
+
+  <!-- Footer -->
+  <div class="report-footer">
+    <strong>VulnCatch AI v3.0</strong> 🏏 — AI-Powered Security Assessment Report<br>
+    This report is generated automatically. Manual verification is recommended for all findings.<br>
+    ⚠ For authorized use only. Unauthorized scanning is illegal.
+  </div>
+
+</div>
+</body>
+</html>

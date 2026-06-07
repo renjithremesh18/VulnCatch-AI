@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VulnCatch AI — Cricket-Themed Vulnerability Scanner</title>
+  <meta name="description" content="VulnCatch AI — AI-powered vulnerability scanner with cricket theme. Catch vulnerabilities before they catch you!">
+  <link rel="stylesheet" href="/static/css/main.css">
+</head>
+<body>
+
+<!-- Cricket Ball (animated during scan) -->
+<div id="cricketBall">
+  <svg class="cricket-ball-svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="50" cy="50" r="48" fill="#DC2626"/>
+    <path d="M 50 2 Q 65 20 65 50 Q 65 80 50 98" stroke="#FFF8E7" stroke-width="2.5" fill="none"/>
+    <path d="M 50 2 Q 35 20 35 50 Q 35 80 50 98" stroke="#FFF8E7" stroke-width="2.5" fill="none"/>
+    <path d="M 20 20 Q 35 30 50 30 Q 65 30 80 20" stroke="#FFF8E7" stroke-width="1.8" fill="none"/>
+    <path d="M 20 80 Q 35 70 50 70 Q 65 70 80 80" stroke="#FFF8E7" stroke-width="1.8" fill="none"/>
+    <circle cx="50" cy="50" r="48" fill="none" stroke="#B91C1C" stroke-width="1"/>
+  </svg>
+</div>
+
+<!-- CAUGHT! Overlay -->
+<div id="caughtOverlay">
+  <div class="caught-bg"></div>
+  <span class="caught-ball">🏏</span>
+  <div class="caught-text">CAUGHT!</div>
+  <div class="caught-sub" id="caughtSub">Vulnerability Detected</div>
+</div>
+
+<!-- Settings Modal -->
+<div class="modal-overlay" id="settingsModal">
+  <div class="modal">
+    <div class="modal-title">⚙ API Key Settings</div>
+    <div class="modal-sub">Configure API keys for AI features — Groq is free and recommended!</div>
+    <div class="modal-field">
+      <label class="modal-label">🚀 Groq AI Key (FREE — Recommended for AI Copilot)</label>
+      <input class="modal-input" id="settGroqKey" type="password" placeholder="gsk_...">
+      <div class="modal-hint">Free at <a href="https://console.groq.com" target="_blank">console.groq.com</a> — 14,400 req/day — Llama 3 70B model — key starts with <strong>gsk_</strong></div>
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">🤖 Gemini AI Key (Alternative — also free)</label>
+      <input class="modal-input" id="settGeminiKey" type="password" placeholder="AIzaSy...">
+      <div class="modal-hint">Free at <a href="https://aistudio.google.com/app/apikey" target="_blank">aistudio.google.com</a> — key starts with <strong>AIzaSy</strong></div>
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">🛡 AbuseIPDB API Key (for IP reputation)</label>
+      <input class="modal-input" id="settAbuseKey" type="password" placeholder="Your AbuseIPDB key">
+      <div class="modal-hint">Free key at <a href="https://www.abuseipdb.com/register" target="_blank">abuseipdb.com</a> — 1000 checks/day</div>
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">🔬 VirusTotal API Key</label>
+      <input class="modal-input" id="settVtKey" type="text" placeholder="Pre-configured ✓">
+      <div class="modal-hint">VirusTotal key is pre-configured. Override here if needed.</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeSettings()">Cancel</button>
+      <button class="btn-save" onclick="saveSettings()">✓ Save Keys</button>
+    </div>
+  </div>
+</div>
+
+<!-- Main App -->
+<div class="app">
+
+  <!-- ══════════════════════════════════════════
+       SIDEBAR
+  ══════════════════════════════════════════ -->
+  <aside class="sidebar">
+
+    <!-- Logo -->
+    <div class="sidebar-logo">
+      <div class="logo-icon-wrap">🏏</div>
+      <div class="logo-text">
+        <div class="logo-title">VulnCatch AI</div>
+        <span class="logo-sub">Catch Vulns Before They Catch You</span>
+      </div>
+      <span class="logo-badge">v4.0</span>
+    </div>
+
+    <!-- Tabs -->
+    <div class="sidebar-nav">
+      <button class="nav-tab active" id="tab-scan" onclick="switchTab('scan')">🔍 Scanner</button>
+      <button class="nav-tab" id="tab-email" onclick="switchTab('email')">📧 Email</button>
+      <button class="nav-tab" id="tab-history" onclick="switchTab('history')">📋 History</button>
+    </div>
+
+    <!-- ── SCAN PANEL ── -->
+    <div class="nav-panel active" id="panel-scan">
+      <div class="target-section">
+        <span class="section-label">Target</span>
+        <div class="input-group">
+          <input class="target-input" id="targetInput"
+                 type="text" placeholder="domain.com or IP"
+                 autocomplete="off" spellcheck="false"
+                 onkeydown="if(event.key==='Enter')startScan()">
+          <div class="target-status-dot" id="targetDot"></div>
+        </div>
+      </div>
+
+      <div class="modules-wrap">
+        <div class="modules-header">
+          <span class="section-label">Scan Modules</span>
+          <button class="btn-text" onclick="selectAll()">All</button>
+          <button class="btn-text" onclick="selectNone()">None</button>
+        </div>
+
+        <!-- Network -->
+        <div class="module-category">
+          <div class="category-title"><span class="cat-icon">🌐</span> Network</div>
+          <label class="module-item" id="mi-port_scan">
+            <input class="module-cb" type="checkbox" value="port_scan" checked>
+            <div class="module-check-box"></div>
+            <span class="module-name">Basic Port Scan</span>
+            <span class="module-time">~30s</span>
+          </label>
+          <label class="module-item" id="mi-full_port_scan">
+            <input class="module-cb" type="checkbox" value="full_port_scan">
+            <div class="module-check-box"></div>
+            <span class="module-name">Full Port Scan</span>
+            <span class="module-time">~5min</span>
+          </label>
+          <label class="module-item" id="mi-aggressive_scan">
+            <input class="module-cb" type="checkbox" value="aggressive_scan">
+            <div class="module-check-box"></div>
+            <span class="module-name">Aggressive Scan</span>
+            <span class="module-time">~2min</span>
+          </label>
+          <label class="module-item" id="mi-service_detection">
+            <input class="module-cb" type="checkbox" value="service_detection">
+            <div class="module-check-box"></div>
+            <span class="module-name">Service Detection</span>
+            <span class="module-time">~45s</span>
+          </label>
+          <label class="module-item" id="mi-banner_grab">
+            <input class="module-cb" type="checkbox" value="banner_grab">
+            <div class="module-check-box"></div>
+            <span class="module-name">Banner Grabbing</span>
+            <span class="module-time">~15s</span>
+          </label>
+        </div>
+
+        <!-- Web -->
+        <div class="module-category">
+          <div class="category-title"><span class="cat-icon">🌍</span> Web</div>
+          <label class="module-item" id="mi-headers">
+            <input class="module-cb" type="checkbox" value="headers" checked>
+            <div class="module-check-box"></div>
+            <span class="module-name">Security Headers</span>
+            <span class="module-time">~10s</span>
+          </label>
+          <label class="module-item" id="mi-ssl">
+            <input class="module-cb" type="checkbox" value="ssl" checked>
+            <div class="module-check-box"></div>
+            <span class="module-name">SSL/TLS Analysis</span>
+            <span class="module-time">~15s</span>
+          </label>
+          <label class="module-item" id="mi-http_methods">
+            <input class="module-cb" type="checkbox" value="http_methods">
+            <div class="module-check-box"></div>
+            <span class="module-name">HTTP Methods Probe</span>
+            <span class="module-time">~10s</span>
+          </label>
+          <label class="module-item" id="mi-nikto">
+            <input class="module-cb" type="checkbox" value="nikto">
+            <div class="module-check-box"></div>
+            <span class="module-name">Nikto Web Scan</span>
+            <span class="module-time">~3min</span>
+          </label>
+          <label class="module-item" id="mi-nuclei">
+            <input class="module-cb" type="checkbox" value="nuclei">
+            <div class="module-check-box"></div>
+            <span class="module-name">Nuclei Scan</span>
+            <span class="module-time">~2min</span>
+          </label>
+        </div>
+
+        <!-- OSINT -->
+        <div class="module-category">
+          <div class="category-title"><span class="cat-icon">🔎</span> OSINT</div>
+          <label class="module-item" id="mi-dns">
+            <input class="module-cb" type="checkbox" value="dns" checked>
+            <div class="module-check-box"></div>
+            <span class="module-name">DNS Enumeration</span>
+            <span class="module-time">~10s</span>
+          </label>
+          <label class="module-item" id="mi-whois">
+            <input class="module-cb" type="checkbox" value="whois" checked>
+            <div class="module-check-box"></div>
+            <span class="module-name">WHOIS Lookup</span>
+            <span class="module-time">~10s</span>
+          </label>
+          <label class="module-item" id="mi-osint">
+            <input class="module-cb" type="checkbox" value="osint" checked>
+            <div class="module-check-box"></div>
+            <span class="module-name">OSINT + Threat Intel</span>
+            <span class="module-time">~20s</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="scan-btn-wrap">
+        <button id="scanBtn" onclick="startScan()">
+          <span id="scanBtnIcon">🏏</span>
+          <span id="scanBtnText">BOWL — Start Scan</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- ── EMAIL PANEL ── -->
+    <div class="nav-panel" id="panel-email">
+      <div class="email-panel">
+        <span class="section-label">Paste Raw Email</span>
+        <textarea class="email-textarea" id="emailInput"
+                  placeholder="Paste full email headers + body here...&#10;&#10;From: sender@domain.com&#10;To: you@example.com&#10;Subject: ..."></textarea>
+        <button id="analyzeEmailBtn" onclick="analyzeEmail()">📧 Analyze for Phishing</button>
+        <div style="margin-top:2px">
+          <span class="section-label">AbuseIPDB Key (optional)</span>
+          <input class="email-api-input" id="emailAbuseKey" type="password"
+                 placeholder="For IP reputation check (optional)">
+        </div>
+      </div>
+    </div>
+
+    <!-- ── HISTORY PANEL ── -->
+    <div class="nav-panel" id="panel-history">
+      <div style="padding:10px 14px 6px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between">
+        <span class="section-label" style="margin:0">Recent Scans</span>
+        <button class="btn-text" onclick="loadHistory()">↻ Refresh</button>
+      </div>
+      <div class="history-wrap" id="historyList">
+        <div class="history-empty">No scans yet</div>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ══════════════════════════════════════════
+       MAIN
+  ══════════════════════════════════════════ -->
+  <main class="main">
+    <div class="main-header">
+      <div class="scan-info">
+        <span class="scan-target-label" id="scanTargetLabel">No target selected</span>
+        <span class="scan-status-badge badge-idle" id="scanStatusBadge">IDLE</span>
+      </div>
+      <div class="progress-bar-wrap">
+        <div class="progress-bar-fill" id="progressFill"></div>
+      </div>
+      <div class="header-actions">
+        <button class="action-btn" onclick="openSettings()">⚙ Settings</button>
+        <button class="action-btn" id="reportBtn" onclick="openReport()" disabled>📄 Report</button>
+        <button class="action-btn" id="aiValidateBtn" onclick="runAiValidation()" disabled>🤖 AI Validate</button>
+      </div>
+    </div>
+
+    <div class="terminal-wrap">
+      <div class="terminal-tabs">
+        <button class="term-tab active" id="ttab-scan" onclick="switchTermTab('scan')">🔍 Scan Log</button>
+        <button class="term-tab" id="ttab-email" onclick="switchTermTab('email')">📧 Email Analysis</button>
+      </div>
+
+      <!-- Scan terminal -->
+      <div id="terminal">
+        <div class="terminal-placeholder" id="termPlaceholder">
+          <span class="big-icon">🏏</span>
+          <p>Ready to bowl! Enter a target and select modules.</p>
+          <p style="font-size:.72rem;color:var(--text-3)">VulnCatch AI v4.0 — AI-Powered Vulnerability Scanner</p>
+        </div>
+        <div class="scan-progress-overlay" id="scanOverlay"></div>
+      </div>
+
+      <!-- Email result panel -->
+      <div id="emailResultPanel"></div>
+    </div>
+  </main>
+
+  <!-- ══════════════════════════════════════════
+       RIGHT PANEL
+  ══════════════════════════════════════════ -->
+  <aside class="right-panel">
+
+    <!-- Score gauge -->
+    <div class="panel-card">
+      <div class="panel-card-title">🎯 Risk Score</div>
+      <div class="gauge-container" id="gaugeContainer">
+        <svg class="gauge-svg" viewBox="0 0 180 110">
+          <path class="gauge-track" d="M 20 100 A 70 70 0 0 1 160 100" fill="none"/>
+          <path class="gauge-fill" id="gaugeFill"
+                d="M 20 100 A 70 70 0 0 1 160 100" fill="none"
+                stroke-dasharray="220" stroke-dashoffset="220"/>
+        </svg>
+        <div class="gauge-score-text">
+          <div class="gauge-score-num" id="gaugeScore">—</div>
+          <div class="gauge-score-label">/ 100</div>
+        </div>
+      </div>
+      <div class="risk-badge" id="riskBadge">WAITING FOR SCAN</div>
+    </div>
+
+    <!-- Severity bars -->
+    <div class="panel-card">
+      <div class="panel-card-title">📊 Findings Breakdown</div>
+      <div class="sev-row sev-critical">
+        <span class="sev-label">Critical</span>
+        <div class="sev-bar-track"><div class="sev-bar-fill" id="bar-critical"></div></div>
+        <span class="sev-count" id="cnt-critical">0</span>
+      </div>
+      <div class="sev-row sev-high">
+        <span class="sev-label">High</span>
+        <div class="sev-bar-track"><div class="sev-bar-fill" id="bar-high"></div></div>
+        <span class="sev-count" id="cnt-high">0</span>
+      </div>
+      <div class="sev-row sev-medium">
+        <span class="sev-label">Medium</span>
+        <div class="sev-bar-track"><div class="sev-bar-fill" id="bar-medium"></div></div>
+        <span class="sev-count" id="cnt-medium">0</span>
+      </div>
+      <div class="sev-row sev-low">
+        <span class="sev-label">Low</span>
+        <div class="sev-bar-track"><div class="sev-bar-fill" id="bar-low"></div></div>
+        <span class="sev-count" id="cnt-low">0</span>
+      </div>
+      <div class="sev-row sev-info">
+        <span class="sev-label">Info</span>
+        <div class="sev-bar-track"><div class="sev-bar-fill" id="bar-info"></div></div>
+        <span class="sev-count" id="cnt-info">0</span>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="panel-card">
+      <div class="panel-card-title">📈 Scan Stats</div>
+      <div class="stats-grid">
+        <div class="stat-item">
+          <div class="stat-label">Findings</div>
+          <div class="stat-value" id="statFindings">0</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">Modules</div>
+          <div class="stat-value" id="statModules">0</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">Duration</div>
+          <div class="stat-value" id="statDuration">—</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">Status</div>
+          <div class="stat-value" id="statStatus" style="font-size:.8rem">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI Validation -->
+    <div class="ai-validation-card" id="aiValidationCard" style="display:none">
+      <div class="ai-val-title">🤖 AI Accuracy Report</div>
+      <div class="ai-val-verdict" id="aiVerdict"></div>
+      <div class="confidence-label">
+        <span>Confidence</span>
+        <span id="aiConfidencePct">—</span>
+      </div>
+      <div class="confidence-bar-wrap">
+        <div class="confidence-bar-fill" id="aiConfidenceBar" style="background:var(--primary)"></div>
+      </div>
+      <div id="aiGaps" style="margin-top:6px"></div>
+      <div id="aiPriorityFixes" style="margin-top:6px"></div>
+    </div>
+
+    <!-- Report button -->
+    <button class="report-btn" id="reportBtnBottom" onclick="openReport()" disabled>
+      📄 Download Full Report
+    </button>
+
+  </aside>
+</div>
+
+<!-- Chat FAB -->
+<button class="chat-fab" id="chatFab" onclick="toggleChat()" title="AI Copilot">
+  🤖
+  <span class="chat-fab-badge" id="chatBadge">!</span>
+</button>
+
+<!-- Chat Drawer -->
+<div class="chat-drawer" id="chatDrawer">
+  <div class="chat-header">
+    <div class="chat-avatar">🏏</div>
+    <div class="chat-header-info">
+      <div class="chat-header-name">VulnCatch AI Copilot</div>
+      <div class="chat-header-sub" id="chatHeaderSub">Offline mode — set Gemini key for AI</div>
+    </div>
+    <div class="chat-header-btns">
+      <button class="chat-icon-btn" onclick="openSettings()" title="Settings">⚙</button>
+      <button class="chat-icon-btn" onclick="toggleChat()" title="Close">✕</button>
+    </div>
+  </div>
+
+  <div class="chat-messages" id="chatMessages">
+    <div class="chat-msg ai">
+      👋 Hi! I'm <strong>VulnCatch AI Copilot</strong>.<br><br>
+      I work in <strong>two modes</strong>:<br>
+      📚 <strong>Offline KB</strong> — always works, no key needed<br>
+      🤖 <strong>Gemini AI</strong> — real AI answers (set free key in ⚙)<br><br>
+      Ask me anything — vulnerability fixes, tool installs, results!
+    </div>
+  </div>
+
+  <div class="chat-quick-prompts">
+    <span class="quick-chip" onclick="sendQuick('Where do I get the free Gemini API key?')">🔑 Free AI Key</span>
+    <span class="quick-chip" onclick="sendQuick('How do I fix the critical findings?')">🔧 Fix Critical</span>
+    <span class="quick-chip" onclick="sendQuick('Explain my scan results')">📊 Explain Results</span>
+    <span class="quick-chip" onclick="sendQuick('How do I install Nikto on Kali?')">🐧 Install Nikto</span>
+    <span class="quick-chip" onclick="sendQuick('What are phishing email signs?')">📧 Phishing</span>
+  </div>
+
+  <div class="chat-input-row">
+    <input class="chat-input" id="chatInput" type="text"
+           placeholder="Ask anything about security..."
+           onkeydown="if(event.key==='Enter')sendChat()">
+    <button class="chat-send-btn" id="chatSendBtn" onclick="sendChat()">Send</button>
+  </div>
+</div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>
