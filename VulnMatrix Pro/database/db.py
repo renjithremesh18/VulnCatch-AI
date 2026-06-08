@@ -96,8 +96,35 @@ class Database:
                 )
             ''')
             conn.commit()
+
+            # ── Migration: add missing columns to existing tables ────────────
+            self._migrate(conn)
+
             # Create default admin user if none exists
             self._ensure_default_user(conn)
+
+    def _migrate(self, conn):
+        """Safely add new columns to existing tables without breaking old data."""
+        migrations = [
+            # scans table new columns
+            ("scans",    "scan_type",          "TEXT DEFAULT 'custom'"),
+            ("scans",    "duration_sec",        "INTEGER"),
+            ("scans",    "target_id",           "INTEGER"),
+            ("scans",    "started_by",          "INTEGER"),
+            # findings table new columns
+            ("findings", "cve_id",              "TEXT DEFAULT ''"),
+            ("findings", "cvss_score",          "REAL DEFAULT 0"),
+            ("findings", "exploit_available",   "INTEGER DEFAULT 0"),
+            ("findings", "status",              "TEXT DEFAULT 'open'"),
+            ("findings", "created_at",          "TEXT NOT NULL DEFAULT ''"),
+        ]
+        for table, column, col_def in migrations:
+            try:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_def}")
+                conn.commit()
+            except Exception:
+                # Column already exists — ignore
+                pass
 
     def _ensure_default_user(self, conn):
         existing = conn.execute('SELECT id FROM users LIMIT 1').fetchone()
