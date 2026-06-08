@@ -1,0 +1,478 @@
+{% extends "layout.html" %}
+{% block title %}New Scan{% endblock %}
+{% block breadcrumb %}New Scan{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">New Vulnerability Scan</h1>
+    <p class="page-subtitle">Configure and launch a security assessment</p>
+  </div>
+</div>
+
+<!-- ── Scan Wizard ────────────────────────────────────────── -->
+<div id="scanSetup">
+
+  <!-- Step 1: Scan Type -->
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-header">
+      <div class="card-title"><div class="card-title-icon">⚡</div>Step 1 — Scan Type</div>
+    </div>
+    <div class="card-body">
+      <div class="scan-type-grid">
+        <div class="scan-type-card selected" data-type="quick" onclick="selectScanType(this,'quick')">
+          <div class="scan-type-icon">⚡</div>
+          <div class="scan-type-name">Quick Scan</div>
+          <div class="scan-type-desc">Port scan + headers + DNS. ~2 min</div>
+        </div>
+        <div class="scan-type-card" data-type="web" onclick="selectScanType(this,'web')">
+          <div class="scan-type-icon">🌐</div>
+          <div class="scan-type-name">Web Scan</div>
+          <div class="scan-type-desc">Headers, SSL, Nuclei, Nikto. ~5 min</div>
+        </div>
+        <div class="scan-type-card" data-type="full" onclick="selectScanType(this,'full')">
+          <div class="scan-type-icon">🔍</div>
+          <div class="scan-type-name">Full Scan</div>
+          <div class="scan-type-desc">All modules. ~10–15 min</div>
+        </div>
+        <div class="scan-type-card" data-type="custom" onclick="selectScanType(this,'custom')">
+          <div class="scan-type-icon">⚙️</div>
+          <div class="scan-type-name">Custom</div>
+          <div class="scan-type-desc">Select specific modules below</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: Target -->
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-header">
+      <div class="card-title"><div class="card-title-icon">🎯</div>Step 2 — Target</div>
+    </div>
+    <div class="card-body">
+      <div class="form-group">
+        <label class="form-label">Target Host / URL</label>
+        <input class="form-control" id="targetInput" placeholder="example.com, 192.168.1.1, https://app.example.com"
+               style="font-size:15px;padding:14px 18px" value="{{ prefill_target or '' }}">
+        <div class="form-hint">Enter a domain, IP address, or full URL. Do not scan targets you don't own or have written permission to test.</div>
+      </div>
+      {% if targets %}
+      <div style="margin-top:12px">
+        <span class="form-label">Quick select from saved targets:</span>
+        <div class="flex gap-2" style="margin-top:8px;flex-wrap:wrap">
+          {% for t in targets[:8] %}
+          <button class="btn btn-outline btn-sm" onclick="document.getElementById('targetInput').value='{{ t.host }}'">
+            {{ t.name }}
+          </button>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Step 3: Modules -->
+  <div class="card" style="margin-bottom:20px" id="modulesCard">
+    <div class="card-header">
+      <div class="card-title"><div class="card-title-icon">🔧</div>Step 3 — Scan Modules</div>
+      <div class="flex gap-2">
+        <button class="btn btn-ghost btn-sm" onclick="selectAll()">Select All</button>
+        <button class="btn btn-ghost btn-sm" onclick="clearAll()">Clear All</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="module-grid" id="moduleGrid">
+        {% set module_icons = {
+          'port_scan': '🔌', 'full_port_scan': '🔌', 'aggressive_scan': '💥',
+          'service_detection': '🔎', 'banner_grab': '📡', 'headers': '🔒',
+          'ssl': '🔐', 'http_methods': '📡', 'dns': '🌐', 'whois': '📋',
+          'osint': '🕵️', 'nikto': '🔍', 'nuclei': '⚡'
+        } %}
+        {% for mid, (name, _, cat) in modules.items() %}
+        <div class="module-card {% if mid in default_modules %}selected{% endif %}"
+             data-module="{{ mid }}" data-cat="{{ cat }}"
+             onclick="toggleModule(this,'{{ mid }}')">
+          <div class="module-icon {{ cat }}">{{ module_icons.get(mid, '🔧') }}</div>
+          <div>
+            <div class="module-name">{{ name }}</div>
+            <div class="module-cat">{{ cat }}</div>
+          </div>
+          <div class="module-check">{% if mid in default_modules %}✓{% endif %}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Launch Button -->
+  <div class="card">
+    <div class="card-body" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px">
+      <div>
+        <div style="font-size:14px;font-weight:600" id="launchSummary">Quick Scan — <span id="selectedCount">5</span> module(s) selected</div>
+        <div style="font-size:12px;color:var(--text-3);margin-top:2px">4-Agent AI will analyze and validate all findings</div>
+      </div>
+      <div class="flex gap-3">
+        <button class="btn btn-outline" onclick="previewModules()">Preview Modules</button>
+        <button class="btn btn-primary" onclick="startScan()" id="launchBtn" style="padding:12px 32px;font-size:15px">
+          🚀 Launch Scan
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /scanSetup -->
+
+<!-- ══ SCAN RUNNING VIEW ════════════════════════════════════ -->
+<div id="scanRunning" style="display:none">
+
+  <!-- Progress Card -->
+  <div class="scan-progress-wrap">
+    <div class="progress-header">
+      <div>
+        <div class="progress-title" id="scanTarget">Scanning…</div>
+        <div style="font-size:12px;color:var(--text-3);margin-top:4px" id="scanCurrentStep">Initializing…</div>
+      </div>
+      <div class="progress-pct" id="scanPct">0%</div>
+    </div>
+    <div class="progress-track">
+      <div class="progress-fill" id="scanBar" style="width:0%"></div>
+    </div>
+    <div class="progress-steps" id="progressSteps"></div>
+  </div>
+
+  <!-- Two-Column Layout -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+
+    <!-- Scan Log -->
+    <div>
+      <div class="scan-log">
+        <div class="scan-log-header">
+          <div class="scan-log-dot r"></div>
+          <div class="scan-log-dot y"></div>
+          <div class="scan-log-dot g"></div>
+          <span class="scan-log-title">LIVE SCAN OUTPUT</span>
+        </div>
+        <div class="scan-log-body" id="scanLog"></div>
+      </div>
+    </div>
+
+    <!-- Live Findings -->
+    <div>
+      <div class="card" style="height:100%">
+        <div class="card-header">
+          <div class="card-title"><div class="card-title-icon">⚠️</div>Live Findings</div>
+          <span class="badge badge-primary" id="findingCountBadge">0</span>
+        </div>
+        <div class="card-body" style="max-height:340px;overflow-y:auto;padding:12px" id="liveFindingsList">
+          <div class="text-muted text-sm" style="text-align:center;padding:20px">Findings will appear here…</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- AI Agent Status -->
+  <div class="card" style="margin-top:20px" id="agentStatusCard">
+    <div class="card-header">
+      <div class="card-title"><div class="card-title-icon">🤖</div>4-Agent AI Analysis</div>
+      <span class="badge badge-info" id="agentStatusBadge">Waiting…</span>
+    </div>
+    <div class="card-body" style="padding:16px">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
+        {% for num, name, role, color in [
+          (1,'Monitor','Pre-scan intel','#3B82F6'),
+          (2,'Validator','Finding review','#8B5CF6'),
+          (3,'Supervisor','Final report','#10B981'),
+          (4,'Meta-Judge','Quality audit','#F59E0B')
+        ] %}
+        <div style="text-align:center;padding:14px;border-radius:10px;border:1px solid var(--border)" id="agent{{ num }}Card">
+          <div style="font-size:24px;margin-bottom:6px">🤖</div>
+          <div style="font-size:12px;font-weight:700;color:{{ color }}">Agent {{ num }}</div>
+          <div style="font-size:11px;font-weight:600;margin:2px 0">{{ name }}</div>
+          <div style="font-size:10px;color:var(--text-3)">{{ role }}</div>
+          <div style="margin-top:8px"><span class="badge badge-info" style="font-size:9px" id="agent{{ num }}Status">Waiting</span></div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Final Score -->
+  <div class="card" style="margin-top:20px;display:none" id="finalScoreCard">
+    <div class="card-header">
+      <div class="card-title"><div class="card-title-icon">🏆</div>Final Assessment</div>
+    </div>
+    <div class="card-body">
+      <div style="display:flex;align-items:center;gap:32px;flex-wrap:wrap">
+        <div class="score-ring-wrap">
+          <div class="score-ring">
+            <svg width="120" height="120" viewBox="0 0 120 120">
+              <circle class="ring-bg" cx="60" cy="60" r="52"/>
+              <circle class="ring-val" cx="60" cy="60" r="52" id="scoreRingVal"
+                      stroke-dasharray="327" stroke-dashoffset="327" stroke="#3B82F6"/>
+            </svg>
+            <div class="score-ring-text">
+              <span class="score-ring-num" id="finalScoreNum" style="color:#3B82F6">—</span>
+              <span class="score-ring-label">/ 100</span>
+            </div>
+          </div>
+          <div style="text-align:center">
+            <div id="finalLabel" style="font-size:16px;font-weight:800"></div>
+            <div id="finalConf" style="font-size:11px;color:var(--text-3)"></div>
+          </div>
+        </div>
+        <div style="flex:1">
+          <div id="supervisorVerdict" style="font-size:14px;line-height:1.6;color:var(--text-2);margin-bottom:16px"></div>
+          <div id="topRisks"></div>
+        </div>
+      </div>
+      <div style="margin-top:20px;display:flex;gap:12px;flex-wrap:wrap" id="finalActions">
+        <a id="reportLink" href="#" class="btn btn-primary">📄 View Full Report</a>
+        <button class="btn btn-outline" onclick="startNewScan()">🔍 New Scan</button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /scanRunning -->
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const MODULES = {{ modules_json | safe }};
+const SCAN_PRESETS = {
+  quick:  ['port_scan', 'headers', 'ssl', 'dns', 'whois'],
+  web:    ['headers', 'ssl', 'http_methods', 'dns', 'nuclei', 'nikto'],
+  full:   Object.keys(MODULES),
+  custom: null,
+};
+let selectedModules = new Set({{ default_modules_json | safe }});
+let activeScanId    = null;
+let activeScanType  = 'quick';
+let currentSteps    = [];
+
+// ── Scan type selection ──────────────────────────────────────
+function selectScanType(el, type) {
+  document.querySelectorAll('.scan-type-card').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+  activeScanType = type;
+  const preset = SCAN_PRESETS[type];
+  if (preset) {
+    selectedModules = new Set(preset.filter(m => MODULES[m]));
+    syncModuleUI();
+  }
+  updateLaunchSummary();
+}
+
+function toggleModule(el, mid) {
+  if (selectedModules.has(mid)) { selectedModules.delete(mid); el.classList.remove('selected'); el.querySelector('.module-check').textContent = ''; }
+  else { selectedModules.add(mid); el.classList.add('selected'); el.querySelector('.module-check').textContent = '✓'; }
+  updateLaunchSummary();
+}
+
+function syncModuleUI() {
+  document.querySelectorAll('.module-card').forEach(card => {
+    const mid = card.dataset.module;
+    const sel = selectedModules.has(mid);
+    card.classList.toggle('selected', sel);
+    card.querySelector('.module-check').textContent = sel ? '✓' : '';
+  });
+}
+function selectAll() { Object.keys(MODULES).forEach(m => selectedModules.add(m)); syncModuleUI(); updateLaunchSummary(); }
+function clearAll()  { selectedModules.clear(); syncModuleUI(); updateLaunchSummary(); }
+
+function updateLaunchSummary() {
+  const typeName = activeScanType.charAt(0).toUpperCase() + activeScanType.slice(1);
+  document.getElementById('selectedCount').textContent = selectedModules.size;
+  document.getElementById('launchSummary').innerHTML = `${typeName} Scan — <span id="selectedCount">${selectedModules.size}</span> module(s) selected`;
+}
+
+function previewModules() {
+  showToast(`Selected: ${[...selectedModules].join(', ')}`, 'info', 4000);
+}
+
+// ── Start scan ───────────────────────────────────────────────
+async function startScan() {
+  const target = document.getElementById('targetInput').value.trim();
+  if (!target) { showToast('Please enter a target', 'warning'); return; }
+  if (!selectedModules.size) { showToast('Select at least one module', 'warning'); return; }
+
+  document.getElementById('launchBtn').disabled = true;
+  document.getElementById('launchBtn').textContent = '⏳ Starting…';
+
+  try {
+    const resp = await fetch('/scan', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ target, modules: [...selectedModules], scan_type: activeScanType })
+    });
+    const data = await resp.json();
+    if (data.error) { showToast(data.error, 'error'); resetLaunchBtn(); return; }
+    activeScanId = data.scan_id;
+    showScanRunning(target, [...selectedModules]);
+    connectEventStream(data.scan_id);
+  } catch(e) {
+    showToast('Failed to start scan: ' + e.message, 'error');
+    resetLaunchBtn();
+  }
+}
+
+function resetLaunchBtn() {
+  const btn = document.getElementById('launchBtn');
+  btn.disabled = false; btn.textContent = '🚀 Launch Scan';
+}
+
+function showScanRunning(target, mods) {
+  document.getElementById('scanSetup').style.display  = 'none';
+  document.getElementById('scanRunning').style.display = '';
+  document.getElementById('scanTarget').textContent   = `Scanning: ${target}`;
+  currentSteps = mods.map(m => MODULES[m]?.name || m);
+  renderProgressSteps(currentSteps, -1);
+}
+
+function renderProgressSteps(steps, activeIdx) {
+  const wrap = document.getElementById('progressSteps');
+  wrap.innerHTML = steps.map((s, i) =>
+    `<span class="progress-step ${i < activeIdx ? 'done' : i === activeIdx ? 'active' : ''}">${i < activeIdx ? '✔ ' : ''}${s}</span>`
+  ).join('');
+}
+
+// ── SSE Event Stream ─────────────────────────────────────────
+function connectEventStream(scanId) {
+  const es = new EventSource(`/stream/${scanId}`);
+  let stepIdx = 0, findingCount = 0;
+
+  const logEl     = document.getElementById('scanLog');
+  const findList  = document.getElementById('liveFindingsList');
+
+  es.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    const type = msg.type;
+
+    if (type === 'keepalive') return;
+
+    if (type === 'log') {
+      const line = document.createElement('div');
+      line.className = `log-line ${msg.level || 'info'}`;
+      line.textContent = msg.message || '';
+      logEl.appendChild(line);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    else if (type === 'section_start') {
+      stepIdx = (msg.step || 1) - 1;
+      document.getElementById('scanCurrentStep').textContent = `Running: ${msg.name}`;
+      renderProgressSteps(currentSteps, stepIdx);
+      const line = document.createElement('div');
+      line.className = 'log-section';
+      line.textContent = `\n▶ ${msg.step}/${msg.total} ${msg.name}`;
+      logEl.appendChild(line);
+    }
+
+    else if (type === 'progress') {
+      const pct = msg.value || 0;
+      document.getElementById('scanBar').style.width = pct + '%';
+      document.getElementById('scanPct').textContent = pct + '%';
+    }
+
+    else if (type === 'finding') {
+      findingCount++;
+      document.getElementById('findingCountBadge').textContent = findingCount;
+      if (findList.querySelector('.text-muted')) findList.innerHTML = '';
+      const card = document.createElement('div');
+      card.className = 'finding-card';
+      card.style.marginBottom = '6px';
+      const sev = msg.severity || 'info';
+      card.innerHTML = `<div class="finding-sev-bar ${sev}"></div>
+        <div class="finding-body">
+          <div class="finding-title">${(msg.description||'').slice(0,80)}${(msg.description||'').length>80?'…':''}</div>
+          <div class="finding-meta"><span class="badge badge-${sev}" style="font-size:10px">${sev.toUpperCase()}</span>
+            <span class="finding-meta-item">${msg.category||''}</span></div>
+        </div>`;
+      findList.appendChild(card);
+      findList.scrollTop = findList.scrollHeight;
+    }
+
+    else if (type === 'score') {
+      showFinalScore(msg);
+      renderProgressSteps(currentSteps, currentSteps.length);
+      document.getElementById('scanBar').style.width = '100%';
+      document.getElementById('scanPct').textContent = '100%';
+    }
+
+    else if (type === 'agent_report') {
+      updateAgentCards(msg);
+    }
+
+    else if (type === 'complete') {
+      es.close();
+      document.getElementById('finalScoreCard').style.display = '';
+      if (activeScanId)
+        document.getElementById('reportLink').href = `/report/${activeScanId}`;
+      showToast(`Scan complete! Score: ${msg.score}/100 — ${msg.findings} finding(s)`, 'success', 5000);
+    }
+
+    else if (type === 'error') {
+      es.close();
+      showToast('Scan error: ' + msg.message, 'error');
+    }
+  };
+}
+
+function showFinalScore(msg) {
+  const score = msg.score || 0;
+  const color = msg.color || '#3B82F6';
+  const circ  = 327;
+  document.getElementById('finalScoreNum').textContent = score;
+  document.getElementById('finalScoreNum').style.color = color;
+  document.getElementById('finalLabel').textContent = msg.label || '';
+  document.getElementById('finalConf').textContent = `Confidence: ${msg.confidence||80}%`;
+  document.getElementById('scoreRingVal').style.stroke = color;
+  document.getElementById('scoreRingVal').style.strokeDashoffset = circ - (score / 100 * circ);
+}
+
+function updateAgentCards(report) {
+  const agents = ['monitor','validator','supervisor','judge'];
+  agents.forEach((key, i) => {
+    const card = document.getElementById(`agent${i+1}Status`);
+    if (card && report[key]) {
+      card.textContent = '✔ Done';
+      card.className   = 'badge badge-success';
+      document.getElementById(`agent${i+1}Card`).style.background = '#F0FDF4';
+    }
+  });
+  document.getElementById('agentStatusBadge').textContent = 'Analysis Complete';
+  document.getElementById('agentStatusBadge').className   = 'badge badge-success';
+
+  if (report.supervisor) {
+    const s = report.supervisor;
+    document.getElementById('supervisorVerdict').textContent = s.security_posture || s.supervisor_summary || '';
+    if (s.top_risks?.length) {
+      document.getElementById('topRisks').innerHTML = s.top_risks.slice(0,3).map(r =>
+        `<div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:8px">
+          <span class="badge badge-${r.severity}" style="flex-shrink:0">${r.rank}</span>
+          <div><div style="font-size:12px;font-weight:600">${r.issue?.slice(0,80)||''}</div>
+          <div style="font-size:11px;color:var(--text-3)">${r.fix?.slice(0,60)||''}</div></div>
+        </div>`
+      ).join('');
+    }
+  }
+}
+
+function startNewScan() {
+  document.getElementById('scanRunning').style.display = 'none';
+  document.getElementById('scanSetup').style.display   = '';
+  document.getElementById('launchBtn').disabled = false;
+  document.getElementById('launchBtn').textContent = '🚀 Launch Scan';
+  document.getElementById('scanLog').innerHTML = '';
+  document.getElementById('liveFindingsList').innerHTML = '<div class="text-muted text-sm" style="text-align:center;padding:20px">Findings will appear here…</div>';
+  document.getElementById('findingCountBadge').textContent = '0';
+  document.getElementById('finalScoreCard').style.display = 'none';
+  activeScanId = null;
+}
+
+// Auto-start if target in URL
+const urlTarget = new URLSearchParams(location.search).get('target');
+if (urlTarget) document.getElementById('targetInput').value = urlTarget;
+</script>
+{% endblock %}

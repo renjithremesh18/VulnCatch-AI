@@ -1,0 +1,182 @@
+{% extends "layout.html" %}
+{% block title %}Threat Intelligence{% endblock %}
+{% block breadcrumb %}Threat Intelligence{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Threat Intelligence</h1>
+    <p class="page-subtitle">Real-time threat data for targets, IPs, and domains</p>
+  </div>
+</div>
+
+<!-- Quick Lookup -->
+<div class="card" style="margin-bottom:20px">
+  <div class="card-header">
+    <div class="card-title"><div class="card-title-icon">🔎</div>Quick Intelligence Lookup</div>
+  </div>
+  <div class="card-body">
+    <div class="flex gap-3 items-center" style="flex-wrap:wrap">
+      <input class="form-control" id="intelTarget" placeholder="example.com or 192.168.1.1"
+             style="max-width:360px" onkeydown="if(event.key==='Enter') runIntelLookup()">
+      <button class="btn btn-primary" onclick="runIntelLookup()">🌐 Run Lookup</button>
+      <button class="btn btn-outline" onclick="loadDemoData()">📋 Demo Data</button>
+    </div>
+  </div>
+</div>
+
+<!-- Loading -->
+<div id="intelLoading" style="display:none;text-align:center;padding:40px">
+  <div class="spinner" style="margin:0 auto 12px"></div>
+  <div class="text-muted">Querying threat intelligence sources…</div>
+</div>
+
+<!-- Results Grid -->
+<div id="intelResults" style="display:none">
+  <div class="dashboard-row" style="margin-bottom:20px">
+
+    <!-- VT Domain -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title"><div class="card-title-icon">🦠</div>VirusTotal Domain</div>
+      </div>
+      <div class="card-body" id="vtDomainCard">
+        <div class="empty-state" style="padding:20px"><div class="empty-state-icon">⏳</div><p>Loading…</p></div>
+      </div>
+    </div>
+
+    <!-- VT IP -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title"><div class="card-title-icon">📡</div>VirusTotal IP</div>
+      </div>
+      <div class="card-body" id="vtIpCard">
+        <div class="empty-state" style="padding:20px"><div class="empty-state-icon">⏳</div><p>Loading…</p></div>
+      </div>
+    </div>
+
+    <!-- IP Info -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title"><div class="card-title-icon">🌍</div>IP Geolocation</div>
+      </div>
+      <div class="card-body" id="ipInfoCard">
+        <div class="empty-state" style="padding:20px"><div class="empty-state-icon">⏳</div><p>Loading…</p></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Recent CVE Feed -->
+<div class="card">
+  <div class="card-header">
+    <div class="card-title"><div class="card-title-icon">📰</div>Recent Critical CVEs</div>
+    <span class="badge badge-critical">Live Feed</span>
+  </div>
+  <div class="card-body">
+    <div class="alert warning">
+      <span class="alert-icon">⚠️</span>
+      CVE feed integration coming soon. Configure NVD API for live CVE data.
+    </div>
+    <!-- Static examples -->
+    {% for cve, score, desc, date in [
+      ('CVE-2024-3400','10.0 CRITICAL','PAN-OS: OS Command Injection in GlobalProtect Gateway','2024-04-12'),
+      ('CVE-2024-6387','8.1 HIGH','OpenSSH: Race condition in signal handler (regreSSHion)','2024-07-01'),
+      ('CVE-2024-1709','10.0 CRITICAL','ConnectWise ScreenConnect: Authentication Bypass','2024-02-21'),
+      ('CVE-2023-46604','10.0 CRITICAL','Apache ActiveMQ: Remote Code Execution','2023-11-01'),
+    ] %}
+    <div class="finding-card" style="margin-bottom:8px">
+      <div class="finding-sev-bar {% if '10.0' in score %}critical{% elif '8' in score or '9' in score %}high{% else %}medium{% endif %}"></div>
+      <div class="finding-body">
+        <div class="finding-title">
+          <span class="badge badge-purple" style="margin-right:8px">{{ cve }}</span>
+          {{ desc }}
+        </div>
+        <div class="finding-meta">
+          <span class="badge badge-{% if 'CRITICAL' in score %}critical{% elif 'HIGH' in score %}high{% else %}medium{% endif %}">{{ score }}</span>
+          <span class="finding-meta-item">📅 {{ date }}</span>
+          <button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px"
+                  onclick="quickCopilot('Explain {{ cve }} vulnerability')">🤖 Ask AI</button>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function runIntelLookup() {
+  const target = document.getElementById('intelTarget').value.trim();
+  if (!target) { showToast('Enter a target', 'warning'); return; }
+  document.getElementById('intelLoading').style.display = '';
+  document.getElementById('intelResults').style.display = 'none';
+  try {
+    const r = await fetch('/api/threat-intel', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ target })
+    });
+    const d = await r.json();
+    document.getElementById('intelLoading').style.display = 'none';
+    renderIntelResults(d);
+    document.getElementById('intelResults').style.display = '';
+  } catch(e) {
+    document.getElementById('intelLoading').style.display = 'none';
+    showToast('Lookup failed: ' + e.message, 'error');
+  }
+}
+
+function renderIntelResults(d) {
+  // VT Domain
+  const vtd = d.vt_domain || {};
+  document.getElementById('vtDomainCard').innerHTML = vtd.error
+    ? `<div class="text-muted">${vtd.error}</div>`
+    : `<div style="display:flex;flex-direction:column;gap:8px">
+        <div><span class="form-label">Malicious</span>
+          <span class="badge ${(vtd.malicious||0)>0?'badge-critical':'badge-success'}">${vtd.malicious||0}</span></div>
+        <div><span class="form-label">Suspicious</span>
+          <span class="badge ${(vtd.suspicious||0)>0?'badge-high':'badge-success'}">${vtd.suspicious||0}</span></div>
+        <div><span class="form-label">Reputation</span>
+          <span class="badge ${(vtd.reputation||0)<0?'badge-high':'badge-success'}">${vtd.reputation||0}</span></div>
+        ${vtd.categories?`<div><span class="form-label">Categories</span><span class="text-sm">${Object.values(vtd.categories).join(', ')}</span></div>`:''}
+      </div>`;
+
+  // VT IP
+  const vti = d.vt_ip || {};
+  document.getElementById('vtIpCard').innerHTML = vti.error
+    ? `<div class="text-muted">${vti.error}</div>`
+    : `<div style="display:flex;flex-direction:column;gap:8px">
+        <div><span class="form-label">IP</span><strong>${d.resolved_ip||'—'}</strong></div>
+        <div><span class="form-label">Malicious</span>
+          <span class="badge ${(vti.malicious||0)>0?'badge-critical':'badge-success'}">${vti.malicious||0}</span></div>
+        <div><span class="form-label">Harmless</span>
+          <span class="badge badge-success">${vti.harmless||0}</span></div>
+      </div>`;
+
+  // IP Info
+  const ip = d.ipinfo || {};
+  document.getElementById('ipInfoCard').innerHTML = ip.error
+    ? `<div class="text-muted">${ip.error}</div>`
+    : `<div style="display:flex;flex-direction:column;gap:8px">
+        <div><span class="form-label">IP</span><strong>${ip.ip||d.resolved_ip||'—'}</strong></div>
+        <div><span class="form-label">Location</span>${ip.city||''}${ip.city?', ':''}${ip.country||'—'}</div>
+        <div><span class="form-label">ISP / Org</span><span class="text-sm">${ip.org||'—'}</span></div>
+        ${ip.hostname?`<div><span class="form-label">Hostname</span><span class="text-sm">${ip.hostname}</span></div>`:''}
+      </div>`;
+}
+
+function loadDemoData() {
+  document.getElementById('intelTarget').value = 'example.com';
+  showToast('Enter a real target for live data', 'info');
+}
+
+function quickCopilot(msg) {
+  if (!chatOpen) toggleChat();
+  document.getElementById('chatInput').value = msg;
+  setTimeout(sendChat, 300);
+}
+</script>
+{% endblock %}

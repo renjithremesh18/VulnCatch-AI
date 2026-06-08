@@ -1,0 +1,92 @@
+{% extends "layout.html" %}
+{% block title %}Scan History{% endblock %}
+{% block breadcrumb %}Scan History{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Scan History</h1>
+    <p class="page-subtitle">All past scans with results and reports</p>
+  </div>
+  <a href="/scans" class="btn btn-primary">🔍 New Scan</a>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <div class="card-title"><div class="card-title-icon">🕐</div>All Scans ({{ scans|length }})</div>
+    <div class="filter-search">
+      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input type="text" placeholder="Search by target…" oninput="filterScans(this.value)">
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table" id="scansTable">
+      <thead>
+        <tr>
+          <th>Target</th>
+          <th>Type</th>
+          <th>Status</th>
+          <th>Score</th>
+          <th>Findings</th>
+          <th>Duration</th>
+          <th>Date</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if scans %}
+          {% for scan in scans %}
+          <tr data-target="{{ scan.target|lower }}">
+            <td class="target-cell">{{ scan.target }}</td>
+            <td><span class="badge badge-info" style="font-size:10px">{{ scan.scan_type or 'Custom' }}</span></td>
+            <td>
+              {% if scan.status == 'completed' %}<span class="badge badge-success">✔ Completed</span>
+              {% elif scan.status == 'running'  %}<span class="badge badge-primary">⚡ Running</span>
+              {% else %}<span class="badge badge-high">✘ Failed</span>{% endif %}
+            </td>
+            <td>
+              {% if scan.score is not none %}
+                <div style="display:flex;align-items:center;gap:8px">
+                  <div style="width:50px;height:6px;background:var(--border);border-radius:10px;overflow:hidden">
+                    <div style="width:{{ scan.score }}%;height:100%;background:{% if scan.score >= 75 %}var(--success){% elif scan.score >= 50 %}var(--warning){% else %}var(--danger){% endif %};border-radius:10px"></div>
+                  </div>
+                  <span style="font-weight:700;font-size:13px;color:{% if scan.score >= 75 %}var(--success){% elif scan.score >= 50 %}var(--warning){% else %}var(--danger){% endif %}">{{ scan.score }}</span>
+                </div>
+              {% else %}<span class="text-muted">—</span>{% endif %}
+            </td>
+            <td class="muted">{{ scan.finding_count or '—' }}</td>
+            <td class="muted">
+              {% if scan.duration_sec %}{{ (scan.duration_sec // 60) }}m {{ scan.duration_sec % 60 }}s{% else %}—{% endif %}
+            </td>
+            <td class="muted">{{ scan.created_at[:16].replace('T',' ') if scan.created_at else '—' }}</td>
+            <td>
+              <div class="flex gap-2">
+                <a href="/report/{{ scan.id }}" class="btn btn-ghost btn-sm" title="View Report">📄 Report</a>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="8">
+            <div class="empty-state">
+              <div class="empty-state-icon">🕐</div>
+              <h3>No scan history</h3>
+              <p><a href="/scans" style="color:var(--primary)">Start your first scan →</a></p>
+            </div>
+          </td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterScans(q) {
+  document.querySelectorAll('#scansTable tbody tr').forEach(row => {
+    row.style.display = row.dataset.target?.includes(q.toLowerCase()) ? '' : 'none';
+  });
+}
+</script>
+{% endblock %}

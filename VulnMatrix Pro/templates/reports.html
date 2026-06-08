@@ -1,0 +1,79 @@
+{% extends "layout.html" %}
+{% block title %}Reports{% endblock %}
+{% block breadcrumb %}Reports{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Reports</h1>
+    <p class="page-subtitle">Generate and export professional security reports</p>
+  </div>
+</div>
+
+<div class="alert info">
+  <span class="alert-icon">ℹ️</span>
+  Select a completed scan below to view its full report. PDF export is coming soon.
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <div class="card-title"><div class="card-title-icon">📄</div>Available Reports ({{ scans|length }})</div>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Target</th>
+          <th>Type</th>
+          <th>Score</th>
+          <th>Status</th>
+          <th>Date</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set completed = scans | selectattr('status', 'equalto', 'completed') | list %}
+        {% if completed %}
+          {% for scan in completed %}
+          <tr>
+            <td class="target-cell">{{ scan.target }}</td>
+            <td><span class="badge badge-info" style="font-size:10px">{{ scan.scan_type or 'Custom' }}</span></td>
+            <td>
+              {% if scan.score is not none %}
+                <span style="font-weight:700;color:{% if scan.score >= 75 %}var(--success){% elif scan.score >= 50 %}var(--warning){% else %}var(--danger){% endif %}">
+                  {{ scan.score }}/100
+                </span>
+              {% else %}<span class="text-muted">—</span>{% endif %}
+            </td>
+            <td><span class="badge badge-success">✔ Completed</span></td>
+            <td class="muted">{{ scan.created_at[:16].replace('T',' ') if scan.created_at else '—' }}</td>
+            <td>
+              <div class="flex gap-2">
+                <a href="/report/{{ scan.id }}" class="btn btn-primary btn-sm" target="_blank">📄 View Report</a>
+                <button class="btn btn-outline btn-sm" onclick="printReport('{{ scan.id }}')">🖨️ Print</button>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="6">
+            <div class="empty-state">
+              <div class="empty-state-icon">📄</div>
+              <h3>No completed scans</h3>
+              <p><a href="/scans" style="color:var(--primary)">Run a scan to generate reports →</a></p>
+            </div>
+          </td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function printReport(id) {
+  window.open(`/report/${id}`, '_blank');
+}
+</script>
+{% endblock %}

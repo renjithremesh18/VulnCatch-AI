@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}VulnCatch AI{% endblock %} — Platform</title>
+<meta name="description" content="VulnCatch AI — Professional Vulnerability Management Platform">
+<link rel="stylesheet" href="/static/css/platform.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{% block head %}{% endblock %}
+</head>
+<body>
+
+<div class="platform" id="platform">
+
+  <!-- ══ SIDEBAR ══════════════════════════════════════════════ -->
+  <aside class="sidebar" id="sidebar">
+
+    <!-- Logo -->
+    <div class="sidebar-logo">
+      <div class="sidebar-logo-icon">🛡️</div>
+      <div class="sidebar-logo-text">
+        <span class="name">VulnCatch AI</span>
+        <span class="version">v2.0 Platform</span>
+      </div>
+    </div>
+
+    <!-- Nav -->
+    <nav class="sidebar-nav">
+
+      <div class="nav-section-label">Main</div>
+      <a href="/dashboard" class="nav-item {% if active_page == 'dashboard' %}active{% endif %}">
+        <div class="nav-icon">📊</div>
+        <span class="nav-label">Dashboard</span>
+      </a>
+      <a href="/targets" class="nav-item {% if active_page == 'targets' %}active{% endif %}">
+        <div class="nav-icon">🎯</div>
+        <span class="nav-label">Targets</span>
+      </a>
+      <a href="/scans" class="nav-item {% if active_page == 'scans' %}active{% endif %}">
+        <div class="nav-icon">🔍</div>
+        <span class="nav-label">New Scan</span>
+      </a>
+
+      <div class="nav-section-label" style="margin-top:8px">Analysis</div>
+      <a href="/findings" class="nav-item {% if active_page == 'findings' %}active{% endif %}">
+        <div class="nav-icon">⚠️</div>
+        <span class="nav-label">Findings</span>
+        {% if critical_count and critical_count > 0 %}
+        <span class="nav-badge">{{ critical_count }}</span>
+        {% endif %}
+      </a>
+      <a href="/ai-analysis" class="nav-item {% if active_page == 'ai' %}active{% endif %}">
+        <div class="nav-icon">🤖</div>
+        <span class="nav-label">AI Analysis</span>
+      </a>
+      <a href="/threat-intel" class="nav-item {% if active_page == 'intel' %}active{% endif %}">
+        <div class="nav-icon">🌐</div>
+        <span class="nav-label">Threat Intel</span>
+      </a>
+
+      <div class="nav-section-label" style="margin-top:8px">Reports</div>
+      <a href="/reports" class="nav-item {% if active_page == 'reports' %}active{% endif %}">
+        <div class="nav-icon">📄</div>
+        <span class="nav-label">Reports</span>
+      </a>
+      <a href="/history" class="nav-item {% if active_page == 'history' %}active{% endif %}">
+        <div class="nav-icon">🕐</div>
+        <span class="nav-label">Scan History</span>
+      </a>
+
+      <div class="nav-section-label" style="margin-top:8px">System</div>
+      <a href="/settings" class="nav-item {% if active_page == 'settings' %}active{% endif %}">
+        <div class="nav-icon">⚙️</div>
+        <span class="nav-label">Settings</span>
+      </a>
+      <a href="/email-analyzer" class="nav-item {% if active_page == 'email' %}active{% endif %}">
+        <div class="nav-icon">📧</div>
+        <span class="nav-label">Email Analyzer</span>
+      </a>
+
+      <div class="nav-section-label" style="margin-top:8px">Coming Soon</div>
+      <div class="nav-item" style="opacity:.45;cursor:default">
+        <div class="nav-icon">🔐</div>
+        <span class="nav-label">Compliance</span>
+      </div>
+      <div class="nav-item" style="opacity:.45;cursor:default">
+        <div class="nav-icon">🏢</div>
+        <span class="nav-label">Asset Inventory</span>
+      </div>
+
+    </nav>
+
+    <!-- User -->
+    <div class="sidebar-footer">
+      <a href="/settings" class="sidebar-user" style="text-decoration:none">
+        <div class="user-avatar">{{ current_user.avatar_initials if current_user else 'AU' }}</div>
+        <div class="user-info">
+          <div class="user-name">{{ current_user.full_name if current_user else 'Admin User' }}</div>
+          <div class="user-role">{{ (current_user.role|capitalize) if current_user else 'Admin' }}</div>
+        </div>
+      </a>
+    </div>
+
+  </aside>
+
+  <!-- ══ MAIN ═════════════════════════════════════════════════ -->
+  <main class="main" id="main">
+
+    <!-- Topbar -->
+    <header class="topbar">
+      <button class="topbar-toggle" onclick="toggleSidebar()" title="Toggle Sidebar">☰</button>
+
+      <div class="topbar-breadcrumb">
+        <span class="breadcrumb-item">VulnCatch AI</span>
+        <span class="breadcrumb-sep">›</span>
+        <span class="breadcrumb-item">{% block breadcrumb %}Dashboard{% endblock %}</span>
+      </div>
+
+      <div class="topbar-search">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input type="text" placeholder="Search findings, targets…" id="globalSearch" onkeydown="if(event.key==='Enter') globalSearchGo()">
+      </div>
+
+      <div class="topbar-actions">
+        <div class="topbar-ai-badge" id="aiStatusBadge" title="AI System Status">
+          <div class="ai-dot"></div>
+          <span id="aiStatusText">AI Ready</span>
+        </div>
+        <button class="topbar-action-btn" onclick="showNewScan()" title="New Scan">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg>
+        </button>
+        <a href="/logout" class="topbar-action-btn" title="Logout">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+        </a>
+      </div>
+    </header>
+
+    <!-- Page Content -->
+    <div class="page-content">
+      {% block content %}{% endblock %}
+    </div>
+
+  </main>
+
+</div><!-- /platform -->
+
+<!-- ══ TOAST CONTAINER ══════════════════════════════════════ -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- ══ AI CHAT PANEL ════════════════════════════════════════ -->
+<div class="ai-chat-panel">
+  <div class="ai-chat-window" id="aiChatWindow">
+    <div class="ai-chat-header">
+      <div class="ai-chat-header-icon">🤖</div>
+      <div class="ai-chat-header-text">
+        <div class="title">VulnCatch AI Copilot</div>
+        <div class="sub">Ask me anything about your security</div>
+      </div>
+      <button class="ai-chat-close" onclick="toggleChat()">✕</button>
+    </div>
+    <div class="ai-chat-messages" id="chatMessages">
+      <div class="chat-msg ai">
+        <div class="chat-avatar">🤖</div>
+        <div class="chat-bubble">Hello! I'm your AI security copilot. Ask me about findings, vulnerabilities, or how to fix issues. What can I help with?</div>
+      </div>
+    </div>
+    <div class="ai-chat-input">
+      <input type="text" id="chatInput" placeholder="Ask about vulnerabilities…"
+             onkeydown="if(event.key==='Enter') sendChat()">
+      <button class="ai-send-btn" onclick="sendChat()">➤</button>
+    </div>
+  </div>
+  <button class="ai-chat-btn" onclick="toggleChat()" id="chatToggleBtn" title="AI Copilot">🤖</button>
+</div>
+
+<!-- ══ PLATFORM JS ══════════════════════════════════════════ -->
+<script>
+// ── Sidebar toggle ───────────────────────────────────────────
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('collapsed');
+  localStorage.setItem('sidebar_collapsed',
+    document.getElementById('sidebar').classList.contains('collapsed') ? '1' : '0');
+}
+// Restore state
+if (localStorage.getItem('sidebar_collapsed') === '1') {
+  document.getElementById('sidebar').classList.add('collapsed');
+}
+
+// ── Toast ────────────────────────────────────────────────────
+function showToast(msg, type='info', duration=3500) {
+  const icons = { success:'✅', error:'❌', warning:'⚠️', info:'ℹ️' };
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.innerHTML = `<span class="toast-icon">${icons[type]||'ℹ️'}</span>
+                 <span class="toast-msg">${msg}</span>
+                 <span class="toast-close" onclick="this.parentElement.remove()">✕</span>`;
+  document.getElementById('toastContainer').appendChild(t);
+  setTimeout(() => t.remove(), duration);
+}
+
+// ── AI Chat ──────────────────────────────────────────────────
+let chatOpen = false;
+let currentScanId = null;
+
+function toggleChat() {
+  chatOpen = !chatOpen;
+  const win = document.getElementById('aiChatWindow');
+  win.classList.toggle('open', chatOpen);
+  if (chatOpen) document.getElementById('chatInput').focus();
+}
+
+async function sendChat() {
+  const input = document.getElementById('chatInput');
+  const msg = input.value.trim();
+  if (!msg) return;
+
+  appendChatMsg(msg, 'user');
+  input.value = '';
+
+  const thinking = appendChatMsg('Thinking…', 'ai', true);
+  try {
+    const resp = await fetch('/api/chat', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ message: msg, scanId: currentScanId })
+    });
+    const data = await resp.json();
+    thinking.remove();
+    appendChatMsg(data.response || data.error || 'No response', 'ai');
+  } catch(e) {
+    thinking.remove();
+    appendChatMsg('Connection error. Please try again.', 'ai');
+  }
+}
+
+function appendChatMsg(text, role, temp=false) {
+  const msgs = document.getElementById('chatMessages');
+  const div = document.createElement('div');
+  div.className = `chat-msg ${role}`;
+  div.innerHTML = `<div class="chat-avatar">${role==='ai'?'🤖':'👤'}</div>
+                   <div class="chat-bubble">${text}</div>`;
+  if (temp) div.style.opacity = '.6';
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+  return div;
+}
+
+// ── Global search ────────────────────────────────────────────
+function globalSearchGo() {
+  const q = document.getElementById('globalSearch').value.trim();
+  if (q) window.location.href = `/findings?search=${encodeURIComponent(q)}`;
+}
+
+// ── Quick new scan shortcut ──────────────────────────────────
+function showNewScan() { window.location.href = '/scans'; }
+
+// ── AI status ────────────────────────────────────────────────
+async function checkAiStatus() {
+  try {
+    const r = await fetch('/api/agent-status');
+    const d = await r.json();
+    const badge = document.getElementById('aiStatusBadge');
+    const text  = document.getElementById('aiStatusText');
+    if (d.ai_mode === 'groq') {
+      text.textContent = '4 Agents · Groq';
+      badge.style.background = 'linear-gradient(135deg,#ECFDF5,#EFF6FF)';
+      badge.style.borderColor = '#A7F3D0';
+      badge.style.color = '#065F46';
+    } else if (d.ai_mode === 'gemini') {
+      text.textContent = '4 Agents · Gemini';
+    } else {
+      text.textContent = 'Agents · Local';
+      badge.style.background = 'linear-gradient(135deg,#FFFBEB,#FFF7ED)';
+      badge.style.borderColor = '#FDE68A';
+      badge.style.color = '#92400E';
+    }
+  } catch(e) {}
+}
+checkAiStatus();
+
+{% block scripts %}{% endblock %}
+</script>
+
+</body>
+</html>

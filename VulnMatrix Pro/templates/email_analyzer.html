@@ -1,0 +1,195 @@
+{% extends "layout.html" %}
+{% block title %}Email Analyzer{% endblock %}
+{% block breadcrumb %}Email Analyzer{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Email Header Analyzer</h1>
+    <p class="page-subtitle">Analyze email headers for phishing, spoofing, and authentication failures</p>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+
+  <!-- Input -->
+  <div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title"><div class="card-title-icon">📧</div>Raw Email / Headers</div>
+      </div>
+      <div class="card-body">
+        <div class="form-group">
+          <label class="form-label">Paste raw email (headers + body)</label>
+          <textarea class="form-control" id="emailInput" rows="14"
+                    placeholder="Paste full raw email content here (Received: from ..., From:, To:, Subject:, DKIM-Signature:, etc.)"
+                    style="font-family:monospace;font-size:12px;resize:vertical"></textarea>
+        </div>
+        <div class="flex gap-3">
+          <button class="btn btn-primary" onclick="analyzeEmail()">🔍 Analyze Email</button>
+          <button class="btn btn-outline" onclick="loadSample()">📋 Load Sample</button>
+          <button class="btn btn-ghost" onclick="document.getElementById('emailInput').value=''">Clear</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div>
+    <div id="emailLoading" style="display:none;text-align:center;padding:60px">
+      <div class="spinner" style="margin:0 auto 12px"></div>
+      <div class="text-muted">Analyzing email headers…</div>
+    </div>
+
+    <div id="emailResults" style="display:none">
+      <!-- Risk Score -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-body" style="display:flex;align-items:center;gap:24px">
+          <div class="score-ring-wrap">
+            <div class="score-ring">
+              <svg width="100" height="100" viewBox="0 0 120 120">
+                <circle class="ring-bg" cx="60" cy="60" r="52"/>
+                <circle class="ring-val" cx="60" cy="60" r="52" id="emailRisk"
+                        stroke-dasharray="327" stroke-dashoffset="0" stroke="#EF4444"/>
+              </svg>
+              <div class="score-ring-text">
+                <span class="score-ring-num" id="emailRiskScore" style="color:#EF4444;font-size:22px">?</span>
+                <span class="score-ring-label" style="font-size:9px">RISK</span>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div id="emailVerdict" style="font-size:16px;font-weight:800;margin-bottom:6px"></div>
+            <div id="emailSummary" style="font-size:13px;color:var(--text-2);line-height:1.5"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Auth Results -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header">
+          <div class="card-title"><div class="card-title-icon">🔐</div>Authentication Results</div>
+        </div>
+        <div class="card-body" id="authResults"></div>
+      </div>
+
+      <!-- Findings -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title"><div class="card-title-icon">⚠️</div>Email Findings</div>
+          <span class="badge badge-high" id="emailFindCount">0</span>
+        </div>
+        <div class="card-body" style="max-height:300px;overflow-y:auto;padding:12px" id="emailFindList">
+        </div>
+      </div>
+    </div>
+
+    <div id="emailEmpty" class="card">
+      <div class="card-body">
+        <div class="empty-state" style="padding:40px">
+          <div class="empty-state-icon">📧</div>
+          <h3>Paste an email to analyze</h3>
+          <p>Raw email headers reveal authentication failures, spoofing, and routing issues</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function analyzeEmail() {
+  const rawEmail = document.getElementById('emailInput').value.trim();
+  if (!rawEmail) { showToast('Paste an email first', 'warning'); return; }
+  document.getElementById('emailEmpty').style.display = 'none';
+  document.getElementById('emailResults').style.display = 'none';
+  document.getElementById('emailLoading').style.display = '';
+  try {
+    const r = await fetch('/api/analyze-email', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ rawEmail })
+    });
+    const d = await r.json();
+    document.getElementById('emailLoading').style.display = 'none';
+    renderEmailResults(d);
+    document.getElementById('emailResults').style.display = '';
+  } catch(e) {
+    document.getElementById('emailLoading').style.display = 'none';
+    showToast('Analysis failed: ' + e.message, 'error');
+    document.getElementById('emailEmpty').style.display = '';
+  }
+}
+
+function renderEmailResults(d) {
+  const risk = d.risk_score || 0;
+  const color = risk >= 70 ? '#EF4444' : risk >= 40 ? '#F59E0B' : '#10B981';
+  const circ  = 327;
+  document.getElementById('emailRisk').style.stroke = color;
+  document.getElementById('emailRisk').style.strokeDashoffset = circ - (risk / 100 * circ);
+  document.getElementById('emailRiskScore').textContent = risk;
+  document.getElementById('emailRiskScore').style.color = color;
+  document.getElementById('emailVerdict').textContent = d.verdict || (risk >= 70 ? '⚠ HIGH RISK' : risk >= 40 ? '🟡 SUSPICIOUS' : '✅ LEGITIMATE');
+  document.getElementById('emailSummary').textContent = d.summary || '';
+
+  // Auth
+  const auth = d.auth_results || {};
+  document.getElementById('authResults').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+      ${['SPF','DKIM','DMARC'].map(k => {
+        const val = auth[k.toLowerCase()] || d[k.toLowerCase()] || '—';
+        const ok  = typeof val === 'string' && (val.toLowerCase().includes('pass') || val === 'true' || val === true);
+        return `<div style="text-align:center;padding:12px;border-radius:10px;border:1px solid var(--border)">
+          <div style="font-size:20px;margin-bottom:4px">${ok?'✅':'❌'}</div>
+          <div style="font-size:12px;font-weight:700">${k}</div>
+          <div style="font-size:11px;color:var(--text-3)">${typeof val === 'boolean' ? (val?'Pass':'Fail') : val}</div>
+        </div>`;
+      }).join('')}
+    </div>`;
+
+  // Findings
+  const findings = d.findings_list || d.findings || [];
+  document.getElementById('emailFindCount').textContent = findings.length;
+  document.getElementById('emailFindList').innerHTML = findings.length
+    ? findings.map(f => `
+        <div class="finding-card" style="margin-bottom:6px">
+          <div class="finding-sev-bar ${f.severity||'info'}"></div>
+          <div class="finding-body">
+            <div class="finding-title">${f.description||''}</div>
+            <div class="finding-meta">
+              <span class="badge badge-${f.severity||'info'}" style="font-size:10px">${(f.severity||'info').toUpperCase()}</span>
+              <span class="finding-meta-item">${f.category||''}</span>
+            </div>
+          </div>
+        </div>`).join('')
+    : '<div class="text-muted text-sm">No findings</div>';
+}
+
+function loadSample() {
+  document.getElementById('emailInput').value = `Received: from mail.suspicious-domain.com (mail.suspicious-domain.com [185.220.101.1])
+        by mx.example.com with ESMTP id abc123
+        for <victim@example.com>; Mon, 8 Jun 2024 10:00:00 +0000
+Return-Path: <noreply@suspicious-domain.com>
+Received-SPF: fail (example.com: domain of noreply@suspicious-domain.com does not designate 185.220.101.1 as permitted sender)
+DKIM-Signature: v=1; a=rsa-sha256; d=suspicious-domain.com; s=mail; b=fakesignature123
+Authentication-Results: mx.example.com;
+       spf=fail smtp.mailfrom=noreply@suspicious-domain.com;
+       dkim=fail header.d=suspicious-domain.com;
+       dmarc=fail action=none header.from=legitimate-bank.com
+From: "Bank Security" <noreply@legitimate-bank.com>
+To: victim@example.com
+Subject: URGENT: Your account has been compromised - Verify Now!
+Date: Mon, 8 Jun 2024 10:00:00 +0000
+Message-ID: <fake123@suspicious-domain.com>
+
+Dear Customer,
+
+Your account has been temporarily suspended. Click here immediately:
+http://phishing-site.ru/bank/verify?token=abc123
+
+This is urgent. Failure to verify within 24 hours will result in account closure.`;
+  showToast('Sample phishing email loaded — click Analyze!', 'info');
+}
+</script>
+{% endblock %}

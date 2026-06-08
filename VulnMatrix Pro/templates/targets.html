@@ -1,0 +1,169 @@
+{% extends "layout.html" %}
+{% block title %}Targets{% endblock %}
+{% block breadcrumb %}Targets{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Asset Targets</h1>
+    <p class="page-subtitle">Manage domains, IP addresses, and web applications</p>
+  </div>
+  <button class="btn btn-primary" onclick="openAddTarget()">
+    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+    Add Target
+  </button>
+</div>
+
+{% if targets %}
+<div class="card">
+  <div class="card-header">
+    <div class="card-title"><div class="card-title-icon">🎯</div>All Targets ({{ targets|length }})</div>
+    <div class="filters-bar" style="margin:0">
+      <div class="filter-search">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input type="text" placeholder="Filter targets…" oninput="filterTargets(this.value)" id="targetFilter">
+      </div>
+      <select class="filter-select" onchange="filterByType(this.value)">
+        <option value="">All Types</option>
+        <option value="domain">Domain</option>
+        <option value="ip">IP Address</option>
+        <option value="webapp">Web App</option>
+      </select>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table" id="targetsTable">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Host / URL</th>
+          <th>Type</th>
+          <th>Last Scanned</th>
+          <th>Last Score</th>
+          <th>Scans</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in targets %}
+        <tr data-type="{{ t.type }}" data-name="{{ t.name|lower }}">
+          <td><strong>{{ t.name }}</strong>{% if t.description %}<br><span class="text-xs text-muted">{{ t.description[:40] }}</span>{% endif %}</td>
+          <td class="target-cell">{{ t.host }}</td>
+          <td>
+            {% if t.type == 'domain' %}<span class="badge badge-info">🌐 Domain</span>
+            {% elif t.type == 'ip' %}<span class="badge badge-purple">📡 IP</span>
+            {% else %}<span class="badge badge-success">🌍 Web App</span>{% endif %}
+          </td>
+          <td class="muted">{{ t.last_scanned[:16].replace('T',' ') if t.last_scanned else '—' }}</td>
+          <td>
+            {% if t.last_score is not none %}
+              <span style="font-weight:700;color:{% if t.last_score >= 75 %}var(--success){% elif t.last_score >= 50 %}var(--warning){% else %}var(--danger){% endif %}">
+                {{ t.last_score }}/100
+              </span>
+            {% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td class="muted">{{ t.scan_count or 0 }}</td>
+          <td>
+            <div class="flex gap-2">
+              <a href="/scans?target={{ t.host }}" class="btn btn-ghost btn-sm btn-icon" title="Scan Now">🔍</a>
+              <button class="btn btn-danger btn-sm btn-icon" onclick="deleteTarget({{ t.id }}, '{{ t.name }}')" title="Delete">🗑️</button>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="card">
+  <div class="card-body">
+    <div class="empty-state" style="padding:60px">
+      <div class="empty-state-icon">🎯</div>
+      <h3>No targets yet</h3>
+      <p>Add your first target to start scanning</p>
+      <button class="btn btn-primary" style="margin-top:16px" onclick="openAddTarget()">Add First Target</button>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Add Target Modal -->
+<div id="addTargetModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:500;display:none;align-items:center;justify-content:center">
+  <div style="background:var(--surface);border-radius:var(--radius-lg);padding:32px;width:480px;max-width:95vw;box-shadow:var(--shadow-lg)">
+    <h3 style="font-size:18px;font-weight:800;margin-bottom:8px">Add New Target</h3>
+    <p style="font-size:13px;color:var(--text-2);margin-bottom:24px">Add a domain, IP, or web application to scan</p>
+    <form onsubmit="submitTarget(event)">
+      <div class="form-group">
+        <label class="form-label">Name / Label</label>
+        <input class="form-control" name="name" placeholder="My Production Server" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Host / URL</label>
+        <input class="form-control" name="host" placeholder="example.com or 192.168.1.1" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Type</label>
+        <select class="form-control" name="type">
+          <option value="domain">Domain</option>
+          <option value="ip">IP Address</option>
+          <option value="webapp">Web Application</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description (optional)</label>
+        <input class="form-control" name="description" placeholder="Brief description…">
+      </div>
+      <div class="flex gap-3" style="margin-top:24px">
+        <button type="submit" class="btn btn-primary">Add Target</button>
+        <button type="button" class="btn btn-outline" onclick="closeAddTarget()">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openAddTarget() {
+  document.getElementById('addTargetModal').style.display = 'flex';
+}
+function closeAddTarget() {
+  document.getElementById('addTargetModal').style.display = 'none';
+}
+async function submitTarget(e) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const data = Object.fromEntries(fd.entries());
+  try {
+    const r = await fetch('/api/targets', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    const d = await r.json();
+    if (d.ok) { showToast('Target added!','success'); setTimeout(()=>location.reload(),800); }
+    else showToast(d.error||'Error','error');
+  } catch(e) { showToast('Connection error','error'); }
+}
+async function deleteTarget(id, name) {
+  if (!confirm(`Delete target "${name}"?`)) return;
+  try {
+    const r = await fetch(`/api/targets/${id}`, { method:'DELETE' });
+    const d = await r.json();
+    if (d.ok) { showToast('Target deleted','info'); setTimeout(()=>location.reload(),800); }
+    else showToast(d.error||'Error','error');
+  } catch(e) { showToast('Connection error','error'); }
+}
+function filterTargets(q) {
+  document.querySelectorAll('#targetsTable tbody tr').forEach(row => {
+    row.style.display = row.dataset.name.includes(q.toLowerCase()) ? '' : 'none';
+  });
+}
+function filterByType(t) {
+  document.querySelectorAll('#targetsTable tbody tr').forEach(row => {
+    row.style.display = (!t || row.dataset.type === t) ? '' : 'none';
+  });
+}
+// Close modal on backdrop click
+document.getElementById('addTargetModal').addEventListener('click', function(e) {
+  if (e.target === this) closeAddTarget();
+});
+</script>
+{% endblock %}

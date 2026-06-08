@@ -1,0 +1,183 @@
+{% extends "layout.html" %}
+{% block title %}AI Analysis{% endblock %}
+{% block breadcrumb %}AI Analysis{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">AI Analysis</h1>
+    <p class="page-subtitle">Deep AI-powered vulnerability analysis and recommendations</p>
+  </div>
+</div>
+
+<!-- 4-Agent Architecture -->
+<div class="card" style="margin-bottom:20px">
+  <div class="card-header">
+    <div class="card-title"><div class="card-title-icon">🤖</div>4-Agent AI Architecture</div>
+    <span class="badge badge-success" id="aiArchStatus">Active</span>
+  </div>
+  <div class="card-body">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px">
+      {% for num, name, role, desc, color, icon in [
+        (1,'Monitor Agent','Pre-Scan Intelligence','Assesses target reachability, CDN status, tool availability before scanning','#3B82F6','🔭'),
+        (2,'Validator Agent','Finding Review','Reviews raw findings, removes false positives, deduplicates CDN-inflated results','#8B5CF6','🔬'),
+        (3,'Supervisor Agent','Final Authority','Cross-validates Agent 1+2 outputs, produces authoritative security assessment','#10B981','👁️'),
+        (4,'Meta-Judge Agent','Quality Auditor','Reviews all 3 agents for mistakes, flags errors, gives pipeline quality score','#F59E0B','⚖️')
+      ] %}
+      <div style="border-radius:12px;border:2px solid {{ color }}20;padding:18px;background:{{ color }}08;text-align:center">
+        <div style="font-size:32px;margin-bottom:8px">{{ icon }}</div>
+        <div style="font-size:11px;font-weight:700;color:{{ color }};text-transform:uppercase;letter-spacing:.5px">Agent {{ num }}</div>
+        <div style="font-size:13px;font-weight:700;margin:6px 0">{{ name }}</div>
+        <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:8px">{{ role }}</div>
+        <div style="font-size:11px;color:var(--text-3);line-height:1.4">{{ desc }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<!-- AI Analysis on Scan -->
+<div class="card" style="margin-bottom:20px">
+  <div class="card-header">
+    <div class="card-title"><div class="card-title-icon">📊</div>Analyze a Scan</div>
+  </div>
+  <div class="card-body">
+    <div class="flex gap-3 items-center" style="flex-wrap:wrap">
+      <select class="filter-select" id="scanSelect" style="min-width:300px">
+        <option value="">Select a scan to analyze…</option>
+        {% for scan in scans %}
+        {% if scan.status == 'completed' %}
+        <option value="{{ scan.id }}">{{ scan.target }} — {{ scan.created_at[:10] if scan.created_at else '' }} (Score: {{ scan.score or '?' }})</option>
+        {% endif %}
+        {% endfor %}
+      </select>
+      <button class="btn btn-primary" onclick="analyzeSelectedScan()">🤖 Generate AI Analysis</button>
+    </div>
+    <div id="aiAnalysisResult" style="margin-top:20px;display:none">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+        <div class="card" style="padding:16px">
+          <div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;margin-bottom:8px">Executive Summary</div>
+          <div id="execSummary" style="font-size:13px;line-height:1.6;color:var(--text)"></div>
+        </div>
+        <div class="card" style="padding:16px">
+          <div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;margin-bottom:8px">Business Impact</div>
+          <div id="bizImpact" style="font-size:13px;line-height:1.6;color:var(--text)"></div>
+        </div>
+      </div>
+      <div class="card" style="padding:16px">
+        <div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;margin-bottom:12px">AI Recommendations</div>
+        <div id="aiRecs" style="font-size:13px;line-height:1.6"></div>
+      </div>
+    </div>
+    <div id="aiLoading" style="display:none;text-align:center;padding:40px">
+      <div class="spinner" style="margin:0 auto 12px"></div>
+      <div class="text-muted">Analyzing with AI agents…</div>
+    </div>
+  </div>
+</div>
+
+<!-- AI Copilot Interactive -->
+<div class="card">
+  <div class="card-header">
+    <div class="card-title"><div class="card-title-icon">💬</div>Interactive AI Security Copilot</div>
+    <span class="badge badge-purple">Powered by Groq + Gemini</span>
+  </div>
+  <div class="card-body">
+    <div style="background:#0F172A;border-radius:12px;overflow:hidden">
+      <div style="background:#1E293B;padding:10px 16px;display:flex;gap:8px;align-items:center">
+        <div style="width:10px;height:10px;border-radius:50%;background:#EF4444"></div>
+        <div style="width:10px;height:10px;border-radius:50%;background:#EAB308"></div>
+        <div style="width:10px;height:10px;border-radius:50%;background:#22C55E"></div>
+        <span style="color:#94A3B8;font-size:11px;margin-left:4px">AI SECURITY COPILOT</span>
+      </div>
+      <div id="copilotMessages" style="padding:16px;max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;font-family:monospace">
+        <div style="color:#4ADE80;font-size:13px">🤖 VulnCatch AI Copilot ready. Ask me about vulnerabilities, findings, or security recommendations.</div>
+      </div>
+      <div style="padding:12px;border-top:1px solid #1E293B;display:flex;gap:8px">
+        <input type="text" id="copilotInput"
+               style="flex:1;background:#1E293B;border:1px solid #334155;color:#E2E8F0;padding:10px 14px;border-radius:8px;font-size:13px;outline:none;font-family:monospace"
+               placeholder="Ask: How do I fix CVE-2024-... ? or What is SQL Injection?"
+               onkeydown="if(event.key==='Enter') sendCopilot()">
+        <button onclick="sendCopilot()" style="background:var(--primary);color:#fff;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600">Send</button>
+      </div>
+    </div>
+    <!-- Quick prompts -->
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+      <span style="font-size:11px;color:var(--text-3);font-weight:600;align-self:center">Quick:</span>
+      {% for prompt in ['Explain SQL injection', 'How to fix XSS?', 'What is CSRF?', 'Explain SSRF vulnerability', 'Best security headers?'] %}
+      <button class="btn btn-ghost btn-sm" onclick="quickCopilot('{{ prompt }}')">{{ prompt }}</button>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function analyzeSelectedScan() {
+  const scanId = document.getElementById('scanSelect').value;
+  if (!scanId) { showToast('Select a scan first', 'warning'); return; }
+  document.getElementById('aiAnalysisResult').style.display = 'none';
+  document.getElementById('aiLoading').style.display = '';
+  try {
+    const r = await fetch(`/api/ai-validate/${scanId}`, {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'
+    });
+    const d = await r.json();
+    document.getElementById('aiLoading').style.display = 'none';
+    if (d.error) { showToast(d.error, 'error'); return; }
+    document.getElementById('execSummary').textContent = d.executive_summary || d.summary || 'Analysis complete. Check full report.';
+    document.getElementById('bizImpact').textContent = d.business_impact || d.impact || 'See report for business impact details.';
+    const recs = d.recommendations || d.immediate_actions || [];
+    document.getElementById('aiRecs').innerHTML = Array.isArray(recs)
+      ? recs.map(r => `<div style="display:flex;gap:8px;margin-bottom:8px">✅ <span>${r}</span></div>`).join('')
+      : recs;
+    document.getElementById('aiAnalysisResult').style.display = '';
+    currentScanId = scanId;
+  } catch(e) {
+    document.getElementById('aiLoading').style.display = 'none';
+    showToast('AI analysis failed: ' + e.message, 'error');
+  }
+}
+
+async function sendCopilot() {
+  const input = document.getElementById('copilotInput');
+  const msg   = input.value.trim();
+  if (!msg) return;
+  input.value = '';
+  const msgs = document.getElementById('copilotMessages');
+  const userLine = document.createElement('div');
+  userLine.style.cssText = 'color:#94A3B8;font-size:13px';
+  userLine.textContent = '> ' + msg;
+  msgs.appendChild(userLine);
+
+  const thinkLine = document.createElement('div');
+  thinkLine.style.cssText = 'color:#4ADE80;font-size:13px;opacity:.6';
+  thinkLine.textContent = '🤖 Thinking…';
+  msgs.appendChild(thinkLine);
+  msgs.scrollTop = msgs.scrollHeight;
+
+  try {
+    const r = await fetch('/api/chat', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ message: msg, scanId: currentScanId })
+    });
+    const d = await r.json();
+    thinkLine.remove();
+    const respLine = document.createElement('div');
+    respLine.style.cssText = 'color:#4ADE80;font-size:13px;white-space:pre-wrap;line-height:1.5';
+    respLine.textContent = '🤖 ' + (d.response || d.error || 'No response');
+    msgs.appendChild(respLine);
+    msgs.scrollTop = msgs.scrollHeight;
+  } catch(e) {
+    thinkLine.textContent = '🤖 Error: ' + e.message;
+  }
+}
+
+function quickCopilot(prompt) {
+  document.getElementById('copilotInput').value = prompt;
+  sendCopilot();
+}
+</script>
+{% endblock %}

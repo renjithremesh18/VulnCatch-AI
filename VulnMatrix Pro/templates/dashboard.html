@@ -1,0 +1,316 @@
+{% extends "layout.html" %}
+
+{% block title %}Dashboard{% endblock %}
+{% block breadcrumb %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Security Dashboard</h1>
+    <p class="page-subtitle">Overview of your vulnerability management posture</p>
+  </div>
+  <div class="flex gap-3">
+    <a href="/history" class="btn btn-outline">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      History
+    </a>
+    <a href="/scans" class="btn btn-primary">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg>
+      New Scan
+    </a>
+  </div>
+</div>
+
+<!-- ── Stats Grid ─────────────────────────────────────────── -->
+<div class="stats-grid">
+
+  <div class="stat-card blue">
+    <div class="stat-header">
+      <span class="stat-label">Total Targets</span>
+      <div class="stat-icon blue">🎯</div>
+    </div>
+    <div class="stat-value">{{ stats.total_targets }}</div>
+    <div class="stat-change up">▲ Active assets</div>
+  </div>
+
+  <div class="stat-card cyan">
+    <div class="stat-header">
+      <span class="stat-label">Total Scans</span>
+      <div class="stat-icon cyan">🔍</div>
+    </div>
+    <div class="stat-value">{{ stats.total_scans }}</div>
+    <div class="stat-change up">▲ Total executed</div>
+  </div>
+
+  <div class="stat-card red">
+    <div class="stat-header">
+      <span class="stat-label">Critical</span>
+      <div class="stat-icon red">🚨</div>
+    </div>
+    <div class="stat-value">{{ stats.critical }}</div>
+    <div class="stat-change {% if stats.critical > 0 %}down{% else %}up{% endif %}">
+      {% if stats.critical > 0 %}⚠ Needs immediate action{% else %}✔ None found{% endif %}
+    </div>
+  </div>
+
+  <div class="stat-card orange">
+    <div class="stat-header">
+      <span class="stat-label">High</span>
+      <div class="stat-icon orange">🔴</div>
+    </div>
+    <div class="stat-value">{{ stats.high }}</div>
+    <div class="stat-change">High-severity findings</div>
+  </div>
+
+  <div class="stat-card yellow">
+    <div class="stat-header">
+      <span class="stat-label">Medium</span>
+      <div class="stat-icon yellow">🟡</div>
+    </div>
+    <div class="stat-value">{{ stats.medium }}</div>
+    <div class="stat-change">Medium-severity findings</div>
+  </div>
+
+  <div class="stat-card green">
+    <div class="stat-header">
+      <span class="stat-label">Open Findings</span>
+      <div class="stat-icon green">📋</div>
+    </div>
+    <div class="stat-value">{{ stats.open }}</div>
+    <div class="stat-change">Awaiting remediation</div>
+  </div>
+
+  <div class="stat-card indigo">
+    <div class="stat-header">
+      <span class="stat-label">Resolved</span>
+      <div class="stat-icon indigo">✅</div>
+    </div>
+    <div class="stat-value">{{ stats.resolved }}</div>
+    <div class="stat-change up">▲ Remediated findings</div>
+  </div>
+
+  <div class="stat-card purple">
+    <div class="stat-header">
+      <span class="stat-label">Security Score</span>
+      <div class="stat-icon purple">🛡️</div>
+    </div>
+    <div class="stat-value" id="dashSecScore">{{ stats.security_score }}</div>
+    <div class="stat-change {% if stats.security_score >= 70 %}up{% else %}down{% endif %}">
+      /100 — avg across scans
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Main Dashboard Grid ────────────────────────────────── -->
+<div class="dashboard-grid">
+
+  <!-- Trend Chart -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">
+        <div class="card-title-icon">📈</div>
+        Security Score Trend
+      </div>
+      <span class="badge badge-primary" style="font-size:10px">Last 7 scans</span>
+    </div>
+    <div class="card-body">
+      <canvas id="trendChart" height="220"></canvas>
+    </div>
+  </div>
+
+  <!-- Severity Distribution -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">
+        <div class="card-title-icon">🎯</div>
+        Severity Distribution
+      </div>
+    </div>
+    <div class="card-body">
+      <canvas id="severityChart" height="160" style="max-width:180px;margin:0 auto;display:block"></canvas>
+      <div class="sev-bars" style="margin-top:20px">
+        {% set total = (stats.critical + stats.high + stats.medium + stats.low + (stats.total_findings - stats.critical - stats.high - stats.medium - stats.low)) %}
+        {% for sev, count in [('Critical', stats.critical), ('High', stats.high), ('Medium', stats.medium), ('Low', stats.low)] %}
+        <div class="sev-bar-row">
+          <span class="sev-bar-label">{{ sev }}</span>
+          <div class="sev-bar-track">
+            <div class="sev-bar-fill {{ sev|lower }}" style="width:{{ ((count / (total + 1)) * 100)|int }}%"></div>
+          </div>
+          <span class="sev-bar-count">{{ count }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Bottom Row ─────────────────────────────────────────── -->
+<div class="dashboard-row">
+
+  <!-- Recent Scans -->
+  <div class="card" style="grid-column: span 2">
+    <div class="card-header">
+      <div class="card-title">
+        <div class="card-title-icon">🔍</div>
+        Recent Scans
+      </div>
+      <a href="/history" class="btn btn-ghost btn-sm">View All →</a>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Target</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Score</th>
+            <th>Date</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if stats.recent_scans %}
+            {% for scan in stats.recent_scans %}
+            <tr>
+              <td class="target-cell">{{ scan.target }}</td>
+              <td><span class="badge badge-info" style="font-size:10px">{{ scan.scan_type or 'Custom' }}</span></td>
+              <td>
+                {% if scan.status == 'completed' %}
+                  <span class="badge badge-success">✔ Done</span>
+                {% elif scan.status == 'running' %}
+                  <span class="badge badge-primary">⚡ Running</span>
+                {% else %}
+                  <span class="badge badge-high">✘ Failed</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if scan.score is not none %}
+                  <span style="font-weight:700;color:{% if scan.score >= 75 %}var(--success){% elif scan.score >= 50 %}var(--warning){% else %}var(--danger){% endif %}">
+                    {{ scan.score }}/100
+                  </span>
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+              <td class="muted">{{ scan.created_at[:16].replace('T',' ') if scan.created_at else '—' }}</td>
+              <td>
+                <a href="/report/{{ scan.id }}" class="btn btn-ghost btn-sm" title="View Report">📄</a>
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr><td colspan="6">
+              <div class="empty-state" style="padding:30px">
+                <div class="empty-state-icon">🔍</div>
+                <h3>No scans yet</h3>
+                <p><a href="/scans" style="color:var(--primary)">Start your first scan →</a></p>
+              </div>
+            </td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Recent Findings -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">
+        <div class="card-title-icon">⚠️</div>
+        Latest Findings
+      </div>
+      <a href="/findings" class="btn btn-ghost btn-sm">All →</a>
+    </div>
+    <div class="card-body" style="padding:12px">
+      {% if stats.recent_findings %}
+        <div style="display:flex;flex-direction:column;gap:8px">
+          {% for f in stats.recent_findings[:6] %}
+          <div class="finding-card" style="padding:10px 14px">
+            <div class="finding-sev-bar {{ f.severity }}"></div>
+            <div class="finding-body">
+              <div class="finding-title truncate" title="{{ f.description }}">{{ f.description[:60] }}{% if f.description|length > 60 %}…{% endif %}</div>
+              <div class="finding-meta">
+                <span class="badge badge-{{ f.severity }}" style="font-size:10px">{{ f.severity|upper }}</span>
+                <span class="finding-meta-item">🎯 {{ f.target }}</span>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty-state" style="padding:30px">
+          <div class="empty-state-icon">✅</div>
+          <h3>No findings yet</h3>
+          <p>Run a scan to discover vulnerabilities</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Trend Chart ──────────────────────────────────────────────
+const trendData = {{ stats.trend_scans | tojson }};
+const trendLabels = trendData.map(s => s.target ? s.target.slice(0,15) : s.created_at.slice(0,10));
+const trendScores = trendData.map(s => s.score || 0);
+
+new Chart(document.getElementById('trendChart'), {
+  type: 'line',
+  data: {
+    labels: trendLabels.length ? trendLabels : ['No data'],
+    datasets: [{
+      label: 'Security Score',
+      data: trendScores.length ? trendScores : [0],
+      borderColor: '#3B82F6',
+      backgroundColor: 'rgba(59,130,246,.08)',
+      borderWidth: 2.5,
+      pointBackgroundColor: '#3B82F6',
+      pointRadius: 5,
+      pointHoverRadius: 7,
+      fill: true,
+      tension: .4,
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false },
+               tooltip: { backgroundColor:'#1E293B', titleFont:{size:12}, bodyFont:{size:12} } },
+    scales: {
+      y: { min:0, max:100, grid:{ color:'#F1F5F9' }, ticks:{ font:{size:11}, color:'#94A3B8' } },
+      x: { grid:{ display:false }, ticks:{ font:{size:11}, color:'#94A3B8' } }
+    }
+  }
+});
+
+// ── Severity Donut ───────────────────────────────────────────
+const sevData = [{{ stats.critical }}, {{ stats.high }}, {{ stats.medium }}, {{ stats.low }},
+                 {{ stats.total_findings - stats.critical - stats.high - stats.medium - stats.low }}];
+const totalF = sevData.reduce((a,b)=>a+b,0);
+new Chart(document.getElementById('severityChart'), {
+  type: 'doughnut',
+  data: {
+    labels: ['Critical','High','Medium','Low','Info'],
+    datasets: [{
+      data: totalF ? sevData : [1,0,0,0,0],
+      backgroundColor: ['#EF4444','#F97316','#F59E0B','#10B981','#6366F1'],
+      borderWidth: 0,
+      hoverOffset: 6,
+    }]
+  },
+  options: {
+    cutout: '65%',
+    plugins: {
+      legend: { display: false },
+      tooltip: { backgroundColor:'#1E293B', bodyFont:{size:12} }
+    }
+  }
+});
+</script>
+{% endblock %}

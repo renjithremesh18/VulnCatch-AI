@@ -1,0 +1,227 @@
+{% extends "layout.html" %}
+{% block title %}Findings{% endblock %}
+{% block breadcrumb %}Findings{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Findings</h1>
+    <p class="page-subtitle">All discovered vulnerabilities across your targets</p>
+  </div>
+  <div class="flex gap-3">
+    <button class="btn btn-outline" onclick="exportFindings()">
+      📥 Export CSV
+    </button>
+    <a href="/scans" class="btn btn-primary">
+      🔍 New Scan
+    </a>
+  </div>
+</div>
+
+<!-- ── Summary Chips ──────────────────────────────────────── -->
+<div class="flex gap-3 mb-6" style="flex-wrap:wrap">
+  <button class="btn btn-sm" id="flt-all" onclick="filterSev('')"
+    style="background:var(--primary);color:#fff">All ({{ findings|length }})</button>
+  <button class="btn btn-outline btn-sm" id="flt-critical" onclick="filterSev('critical')"
+    style="border-color:#FCA5A5;color:#DC2626">🔴 Critical</button>
+  <button class="btn btn-outline btn-sm" id="flt-high" onclick="filterSev('high')"
+    style="border-color:#FED7AA;color:#D97706">🟠 High</button>
+  <button class="btn btn-outline btn-sm" id="flt-medium" onclick="filterSev('medium')"
+    style="border-color:#FDE68A;color:#92400E">🟡 Medium</button>
+  <button class="btn btn-outline btn-sm" id="flt-low" onclick="filterSev('low')"
+    style="border-color:#A7F3D0;color:#065F46">🟢 Low</button>
+  <button class="btn btn-outline btn-sm" id="flt-info" onclick="filterSev('info')"
+    style="border-color:#BFDBFE;color:#1E40AF">🔵 Info</button>
+</div>
+
+<!-- ── Filters Bar ────────────────────────────────────────── -->
+<div class="filters-bar">
+  <div class="filter-search">
+    <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+    <input type="text" placeholder="Search findings…" id="findingSearch"
+           oninput="applyFilters()" value="{{ request_args.get('search','') if request_args else '' }}">
+  </div>
+  <select class="filter-select" id="filterTarget" onchange="applyFilters()">
+    <option value="">All Targets</option>
+    {% for t in finding_targets %}
+    <option value="{{ t }}">{{ t }}</option>
+    {% endfor %}
+  </select>
+  <select class="filter-select" id="filterCat" onchange="applyFilters()">
+    <option value="">All Categories</option>
+    {% for c in finding_cats %}
+    <option value="{{ c }}">{{ c }}</option>
+    {% endfor %}
+  </select>
+</div>
+
+<!-- ── Findings Table ─────────────────────────────────────── -->
+<div class="card">
+  <div class="table-wrap">
+    <table class="data-table" id="findingsTable">
+      <thead>
+        <tr>
+          <th>Severity</th>
+          <th>Category</th>
+          <th>Description</th>
+          <th>Target</th>
+          <th>Date</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="findingsTbody">
+        {% if findings %}
+          {% for f in findings %}
+          <tr data-sev="{{ f.severity }}" data-target="{{ f.target|lower }}"
+              data-cat="{{ f.category|lower }}" data-desc="{{ f.description|lower }}">
+            <td>
+              <span class="badge badge-{{ f.severity }}">
+                {% if f.severity == 'critical' %}🔴{% elif f.severity == 'high' %}🟠{% elif f.severity == 'medium' %}🟡{% elif f.severity == 'low' %}🟢{% else %}🔵{% endif %}
+                {{ f.severity|upper }}
+              </span>
+            </td>
+            <td><span class="text-sm font-600">{{ f.category }}</span></td>
+            <td style="max-width:340px">
+              <span title="{{ f.description }}">{{ f.description[:100] }}{% if f.description|length > 100 %}…{% endif %}</span>
+              {% if f.cve_id %}
+              <br><span class="badge badge-purple" style="margin-top:4px;font-size:10px">{{ f.cve_id }}</span>
+              {% endif %}
+            </td>
+            <td class="target-cell">{{ f.target }}</td>
+            <td class="muted">{{ f.created_at[:10] if f.created_at else '—' }}</td>
+            <td>
+              <button class="btn btn-ghost btn-sm btn-icon" onclick="showFindingDetail({{ loop.index0 }})" title="View Detail">🔍</button>
+              <button class="btn btn-ghost btn-sm btn-icon" onclick="askAiAbout({{ loop.index0 }})" title="Ask AI">🤖</button>
+            </td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="6">
+            <div class="empty-state">
+              <div class="empty-state-icon">✅</div>
+              <h3>No findings yet</h3>
+              <p>Run a scan to discover vulnerabilities</p>
+            </div>
+          </td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card-footer">
+    <span class="text-sm text-muted" id="findingsCount">
+      Showing {{ findings|length }} finding(s)
+    </span>
+  </div>
+</div>
+
+<!-- Finding Detail Modal -->
+<div id="findingModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500;align-items:center;justify-content:center">
+  <div style="background:var(--surface);border-radius:var(--radius-lg);padding:32px;width:600px;max-width:95vw;max-height:80vh;overflow-y:auto;box-shadow:var(--shadow-lg)">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px">
+      <div>
+        <div id="modalSev" class="badge" style="margin-bottom:8px"></div>
+        <h3 id="modalTitle" style="font-size:16px;font-weight:700;max-width:500px"></h3>
+      </div>
+      <button onclick="closeFindingModal()" style="font-size:20px;color:var(--text-3);background:none;border:none;cursor:pointer">✕</button>
+    </div>
+    <div id="modalBody"></div>
+    <div style="margin-top:20px">
+      <button class="btn btn-primary btn-sm" onclick="askAiAboutCurrent()">🤖 Get AI Fix Recommendation</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const allFindings = {{ findings | tojson }};
+let currentFindingIdx = 0;
+let activeSev = '';
+
+function filterSev(sev) {
+  activeSev = sev;
+  // Update button styles
+  ['all','critical','high','medium','low','info'].forEach(s => {
+    const btn = document.getElementById('flt-'+s);
+    if (btn) {
+      btn.style.background = (sev===s||(s==='all'&&!sev)) ? 'var(--primary)' : '';
+      btn.style.color      = (sev===s||(s==='all'&&!sev)) ? '#fff' : '';
+    }
+  });
+  applyFilters();
+}
+
+function applyFilters() {
+  const search = document.getElementById('findingSearch').value.toLowerCase();
+  const target = document.getElementById('filterTarget').value.toLowerCase();
+  const cat    = document.getElementById('filterCat').value.toLowerCase();
+  let visible  = 0;
+  document.querySelectorAll('#findingsTbody tr').forEach(row => {
+    const sMatch  = !activeSev || row.dataset.sev === activeSev;
+    const tMatch  = !target    || row.dataset.target.includes(target);
+    const cMatch  = !cat       || row.dataset.cat.includes(cat);
+    const qMatch  = !search    || row.dataset.desc.includes(search) || row.dataset.cat.includes(search);
+    const show    = sMatch && tMatch && cMatch && qMatch;
+    row.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+  const el = document.getElementById('findingsCount');
+  if (el) el.textContent = `Showing ${visible} finding(s)`;
+}
+
+function showFindingDetail(idx) {
+  currentFindingIdx = idx;
+  const f = allFindings[idx];
+  if (!f) return;
+  const modal = document.getElementById('findingModal');
+  const sevColors = {critical:'badge-critical',high:'badge-high',medium:'badge-medium',low:'badge-low',info:'badge-info'};
+  document.getElementById('modalSev').className = `badge ${sevColors[f.severity]||'badge-info'}`;
+  document.getElementById('modalSev').textContent = f.severity?.toUpperCase();
+  document.getElementById('modalTitle').textContent = f.description;
+  document.getElementById('modalBody').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+      <div><div class="form-label">Target</div><div class="font-600">${f.target||'—'}</div></div>
+      <div><div class="form-label">Category</div><div class="font-600">${f.category||'—'}</div></div>
+      <div><div class="form-label">CVE ID</div><div>${f.cve_id?`<span class="badge badge-purple">${f.cve_id}</span>`:'<span class="text-muted">None</span>'}</div></div>
+      <div><div class="form-label">CVSS Score</div><div>${f.cvss_score||'—'}</div></div>
+      <div><div class="form-label">Date Found</div><div class="text-muted">${(f.created_at||'').slice(0,10)}</div></div>
+      <div><div class="form-label">Status</div><span class="badge badge-${f.status==='resolved'?'success':'high'}">${f.status||'open'}</span></div>
+    </div>
+    <div style="background:var(--bg);border-radius:8px;padding:14px;font-size:13px;line-height:1.6">
+      ${f.description}
+    </div>
+  `;
+  modal.style.display = 'flex';
+}
+function closeFindingModal() {
+  document.getElementById('findingModal').style.display = 'none';
+}
+function askAiAbout(idx) {
+  const f = allFindings[idx];
+  if (!f) return;
+  // Open chat and ask about this finding
+  if (!chatOpen) toggleChat();
+  document.getElementById('chatInput').value = `Explain this finding and how to fix it: ${f.description}`;
+  setTimeout(sendChat, 300);
+}
+function askAiAboutCurrent() { askAiAbout(currentFindingIdx); closeFindingModal(); }
+
+function exportFindings() {
+  const rows = [['Severity','Category','Description','Target','Date']];
+  allFindings.forEach(f => rows.push([f.severity,f.category,`"${f.description?.replace(/"/g,'""')}"`,f.target,f.created_at?.slice(0,10)]));
+  const csv = rows.map(r=>r.join(',')).join('\n');
+  const a = document.createElement('a'); a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = 'vulncatch_findings.csv'; a.click();
+}
+
+// Backdrop close
+document.getElementById('findingModal').addEventListener('click', function(e) {
+  if (e.target === this) closeFindingModal();
+});
+
+// Auto-apply search from URL
+const urlSearch = new URLSearchParams(location.search).get('search');
+if (urlSearch) { document.getElementById('findingSearch').value = urlSearch; applyFilters(); }
+</script>
+{% endblock %}
