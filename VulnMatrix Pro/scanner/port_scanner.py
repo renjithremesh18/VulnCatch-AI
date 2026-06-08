@@ -152,14 +152,28 @@ def _http_service_scan(target, callback):
     HTTP-based service fingerprinting — works THROUGH Cloudflare/CDN.
     Uses requests library to probe web services on all known CDN-accessible ports.
     Extracts: server type, headers, redirects, SSL info, technology stack.
+    Findings are deduplicated across all CDN ports — each issue reported ONCE.
     """
     host = _normalize_target(target)
     _log(callback, '🌐 CDN detected — switching to HTTP-based service scan...', 'info')
     _log(callback, '   (Direct TCP port scans are blocked by CDN — this is normal)', 'info')
     _log(callback, f'   Probing {len(CF_PORTS_HTTP + CF_PORTS_HTTPS)} CDN-accessible ports via HTTP/HTTPS...', 'info')
 
+    # Deduplication tracker — keys added here are never reported twice
+    _reported = set()
+
     found_services = []
     headers_ua = {'User-Agent': 'Mozilla/5.0 (VulnCatch-AI/4.0 Security Scanner)'}
+
+    # Aggregated per-header absence flags (set True the first time header is missing)
+    missing_hsts     = False
+    missing_csp      = False
+    missing_xfo      = False
+    missing_xcto     = False
+    http_no_redirect = False
+
+    # Track server values already reported to avoid same-value duplication
+    reported_servers = set()
 
     all_ports = [(p, False) for p in CF_PORTS_HTTP] + [(p, True) for p in CF_PORTS_HTTPS]
 
@@ -174,69 +188,71 @@ def _http_service_scan(target, callback):
             found_services.append({'port': port, 'scheme': scheme,
                                    'status': status, 'headers': dict(resp.headers)})
 
-            # ── Analyze response headers ──────────────────────────────────────
             rh = resp.headers
 
-            # Server disclosure
-            if 'Server' in rh:
-                sv = rh['Server']
-                _log(callback, f'    Server: {sv}', 'info')
-                if any(x in sv.lower() for x in ['apache', 'nginx', 'iis', 'litespeed']):
-                    _finding(callback, 'low', 'Information Disclosure',
-                             f'Server header reveals technology: {sv}',
-                             port=port, service='http')
-                    # Check for old versions
-                    old_vers = {'apache/2.2': 'Apache 2.2 EOL', 'apache/2.0': 'Apache 2.0 EOL',
-                                'nginx/1.': 'Check nginx version', 'iis/7': 'IIS 7 EOL'}
-                    for kw, msg in old_vers.items():
-                        if kw in sv.lower():
-                            _finding(callback, 'high', 'Outdated Software',
-                                     f'{msg} — upgrade immediately. Server: {sv}', port=port)
-
-            # X-Powered-By disclosure
-            if 'X-Powered-By' in rh:
-                xpb = rh['X-Powered-By']
-                _log(callback, f'    X-Powered-By: {xpb}', 'warning')
-                _finding(callback, 'low', 'Information Disclosure',
-                         f'X-Powered-By header leaks tech stack: {xpb}', port=port)
-                if 'php/5' in xpb.lower() or 'php/7.0' in xpb.lower() or 'php/7.1' in xpb.lower():
-                    _finding(callback, 'high', 'Outdated Software',
-                             f'Outdated PHP version: {xpb} — critical CVEs exist', port=port)
-
-            # CDN info
-            if 'CF-RAY' in rh:
+            # ── CDN / Cloudflare — report ONCE ───────────────────────────────
+            if 'CF-RAY' in rh and 'cdn_cloudflare' not in _reported:
                 _log(callback, f'    ☁ Cloudflare detected (CF-Ray: {rh["CF-RAY"][:16]}...)', 'info')
                 _finding(callback, 'info', 'CDN / Infrastructure',
                          'Site is behind Cloudflare CDN — real server IP is hidden. '
                          'Port scans show CDN edge, not origin server.',
-                         port=port, cdn='Cloudflare')
+                         cdn='Cloudflare')
+                _reported.add('cdn_cloudflare')
 
-            # Security headers check
-            missing = []
-            if 'Strict-Transport-Security' not in rh and use_ssl:
-                missing.append('HSTS')
+            # ── Server disclosure — deduplicate by value ───────────────────────
+            if 'Server' in rh:
+                sv = rh['Server']
+                _log(callback, f'    Server: {sv}', 'info')
+                if any(x in sv.lower() for x in ['apache', 'nginx', 'iis', 'litespeed']):
+                    if sv not in reported_servers:
+                        _finding(callback, 'low', 'Information Disclosure',
+                                 f'Server header reveals technology: {sv}',
+                                 port=port, service='http')
+                        reported_servers.add(sv)
+                        # Check for old versions (only once per server string)
+                        old_vers = {
+                            'apache/2.2': 'Apache 2.2 EOL',
+                            'apache/2.0': 'Apache 2.0 EOL',
+                            'nginx/1.':   'Check nginx version',
+                            'iis/7':      'IIS 7 EOL',
+                        }
+                        for kw, msg in old_vers.items():
+                            if kw in sv.lower():
+                                _finding(callback, 'high', 'Outdated Software',
+                                         f'{msg} — upgrade immediately. Server: {sv}', port=port)
+
+            # ── X-Powered-By disclosure — deduplicate by value ────────────────
+            if 'X-Powered-By' in rh:
+                xpb = rh['X-Powered-By']
+                _log(callback, f'    X-Powered-By: {xpb}', 'warning')
+                xpb_key = f'xpb_{xpb}'
+                if xpb_key not in _reported:
+                    _finding(callback, 'low', 'Information Disclosure',
+                             f'X-Powered-By header leaks tech stack: {xpb}', port=port)
+                    _reported.add(xpb_key)
+                    if 'php/5' in xpb.lower() or 'php/7.0' in xpb.lower() or 'php/7.1' in xpb.lower():
+                        _finding(callback, 'high', 'Outdated Software',
+                                 f'Outdated PHP version: {xpb} — critical CVEs exist', port=port)
+
+            # ── Collect missing security headers (reported once after loop) ────
+            if use_ssl and 'Strict-Transport-Security' not in rh:
+                missing_hsts = True
             if 'Content-Security-Policy' not in rh:
-                missing.append('CSP')
+                missing_csp = True
             if 'X-Frame-Options' not in rh:
-                missing.append('X-Frame-Options')
+                missing_xfo = True
             if 'X-Content-Type-Options' not in rh:
-                missing.append('X-Content-Type-Options')
-            if missing:
-                _finding(callback, 'medium', 'HTTP Security Headers',
-                         f'Port {port}: Missing security headers: {", ".join(missing)}',
-                         port=port, missing_headers=missing)
+                missing_xcto = True
 
-            # HTTP only (no redirect to HTTPS)
+            # ── HTTP without HTTPS redirect — flag ONCE ───────────────────────
             if not use_ssl and status < 400:
                 location = rh.get('Location', '')
                 if location and location.startswith('https://'):
-                    _log(callback, f'    ✔ Redirects to HTTPS: {location[:60]}', 'success')
+                    _log(callback, f'    ✔ Port {port}: Redirects to HTTPS: {location[:60]}', 'success')
                 else:
-                    _finding(callback, 'medium', 'HTTP Security',
-                             f'Port {port}: Site accessible over HTTP without HTTPS redirect — '
-                             'traffic may be intercepted', port=port)
+                    http_no_redirect = True
 
-            # Admin/login pages
+            # ── Admin/login pages — per port (different pages, different risks) ─
             body_lower = (resp.text or '')[:2000].lower()
             if any(x in body_lower for x in ['admin', 'login', 'dashboard', 'wp-admin']):
                 _finding(callback, 'low', 'Web Application',
@@ -252,6 +268,36 @@ def _http_service_scan(target, callback):
         except Exception:
             pass
 
+    # ── Emit ONE summary finding per missing header type ──────────────────────
+    if missing_hsts and 'hsts' not in _reported:
+        _finding(callback, 'medium', 'HTTP Security Headers',
+                 'Missing HSTS (Strict-Transport-Security) — browsers may allow '
+                 'downgrade attacks on HTTPS connections')
+        _reported.add('hsts')
+
+    if missing_csp and 'csp' not in _reported:
+        _finding(callback, 'medium', 'HTTP Security Headers',
+                 'Missing Content-Security-Policy (CSP) — increases XSS and '
+                 'code-injection risk')
+        _reported.add('csp')
+
+    if missing_xfo and 'xfo' not in _reported:
+        _finding(callback, 'medium', 'HTTP Security Headers',
+                 'Missing X-Frame-Options — site may be vulnerable to clickjacking')
+        _reported.add('xfo')
+
+    if missing_xcto and 'xcto' not in _reported:
+        _finding(callback, 'medium', 'HTTP Security Headers',
+                 'Missing X-Content-Type-Options — MIME-type sniffing attacks possible')
+        _reported.add('xcto')
+
+    if http_no_redirect and 'http_no_https' not in _reported:
+        _finding(callback, 'medium', 'HTTP Security',
+                 'Site accessible over plain HTTP without redirect to HTTPS — '
+                 'traffic may be intercepted or tampered with')
+        _reported.add('http_no_https')
+
+    # ── Summary log ───────────────────────────────────────────────────────────
     if found_services:
         _log(callback, f'\n  📊 Found {len(found_services)} accessible HTTP service(s) on CDN ports', 'success')
         for svc in found_services:
