@@ -77,13 +77,14 @@ def template_vars(**extra):
     """Common template variables injected into every page."""
     user = get_current_user()
     stats = db.get_dashboard_stats()
-    return dict(
+    base = dict(
         current_user   = user,
         active_page    = '',
         critical_count = stats.get('critical', 0),
         vt_configured  = bool(VT_API_KEY),
-        **extra
     )
+    base.update(extra)   # extra keys override base keys — no conflict
+    return base
 
 
 # ── Scan Push Helper ─────────────────────────────────────────────────────────
