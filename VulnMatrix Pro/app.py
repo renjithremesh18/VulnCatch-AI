@@ -419,9 +419,7 @@ def email_analyzer_page():
 @app.route('/settings')
 @login_required
 def settings_page():
-    return render_template('settings.html',
-                           vt_configured=bool(VT_API_KEY),
-                           **template_vars(active_page='settings'))
+    return render_template('settings.html', **template_vars(active_page='settings'))
 
 
 # ════════════════════════════════════════════════════════════════════════════
